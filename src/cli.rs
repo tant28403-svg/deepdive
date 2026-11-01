@@ -107,8 +107,40 @@ pub enum CacheAction {
 impl Cli {
     pub async fn run(self) -> Result<()> {
         match self.command {
-            Commands::Scan { .. } => {
-                println!("scan: not yet implemented");
+            Commands::Scan {
+                path,
+                max_size,
+                format,
+                out: _,
+                min_severity: _,
+                offline: _,
+                deep: _,
+                sandbox: _,
+                threads: _,
+                rules: _,
+                no_color: _,
+            } => {
+                use crate::analysis::file_type;
+                use crate::analysis::walker;
+                use std::collections::BTreeMap;
+
+                let files = walker::walk_files(&path, max_size);
+                let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+                for f in &files {
+                    let ft = file_type::detect(f);
+                    *counts.entry(ft.as_str()).or_insert(0) += 1;
+                }
+
+                println!("deepdive scan: {}", path.display());
+                println!("files scanned: {}", files.len());
+                for (k, v) in &counts {
+                    println!("  {:<12} {}", k, v);
+                }
+
+                if format == "json" {
+                    // Placeholder: JSON report in later stage.
+                    println!("(json output not yet implemented)");
+                }
                 Ok(())
             }
             Commands::Fetch { .. } => {
