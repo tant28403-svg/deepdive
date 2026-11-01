@@ -179,9 +179,13 @@ impl Cli {
                         crate::sandbox::docker::run_sandbox(&cmd, &path, &image, 300)
                     } else if cfg!(windows) {
                         crate::sandbox::windows_native::run_native(&cmd, &path, 300)
+                    } else if crate::sandbox::linux_native::bwrap_available()
+                        || crate::sandbox::linux_native::firejail_available()
+                    {
+                        crate::sandbox::linux_native::run_native(&cmd, &path, 300)
                     } else {
                         Err(anyhow::anyhow!(
-                            "no sandbox available (docker not installed)"
+                            "no sandbox available (install docker, or bubblewrap/firejail on Linux)"
                         ))
                     };
                     match result {
@@ -374,8 +378,14 @@ impl Cli {
                         crate::sandbox::docker::run_sandbox(cmd, &path, &image, 300)
                     } else if cfg!(windows) {
                         crate::sandbox::windows_native::run_native(cmd, &path, 300)
+                    } else if crate::sandbox::linux_native::bwrap_available()
+                        || crate::sandbox::linux_native::firejail_available()
+                    {
+                        crate::sandbox::linux_native::run_native(cmd, &path, 300)
                     } else {
-                        Err(anyhow::anyhow!("no sandbox available"))
+                        Err(anyhow::anyhow!(
+                            "no sandbox available (install docker, or bubblewrap/firejail on Linux)"
+                        ))
                     };
                     match result {
                         Ok(report) => {
