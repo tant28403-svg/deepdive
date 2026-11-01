@@ -63,6 +63,11 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
                 findings.extend(crate::analysis::archive::scan(path, &bytes));
             }
         }
+        FileType::WindowsArtifact => {
+            if let Ok(bytes) = std::fs::read(path) {
+                findings.extend(crate::analysis::windows_extras::scan(path, &bytes));
+            }
+        }
         _ => {}
     }
     // Build-script / CI / Dockerfile analysis (by filename).

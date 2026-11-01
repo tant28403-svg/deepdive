@@ -17,3 +17,4 @@ pub mod secrets;
 pub mod source;
 pub mod symlinks;
 pub mod walker;
+pub mod windows_extras;

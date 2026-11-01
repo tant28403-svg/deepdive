@@ -152,6 +152,7 @@ impl Cli {
                 let mut all_findings: Vec<Finding> = Vec::new();
                 if path.is_dir() {
                     all_findings.extend(crate::analysis::symlinks::scan_root(&path));
+                    all_findings.extend(crate::analysis::windows_extras::scan_tree(&path));
                 }
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {
@@ -374,6 +375,7 @@ impl Cli {
                 let mut all_findings: Vec<Finding> = Vec::new();
                 if scanned_path.is_dir() {
                     all_findings.extend(crate::analysis::symlinks::scan_root(&scanned_path));
+                    all_findings.extend(crate::analysis::windows_extras::scan_tree(&scanned_path));
                 }
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {
@@ -417,6 +419,7 @@ impl Cli {
                 let mut all_findings: Vec<Finding> = Vec::new();
                 if path.is_dir() {
                     all_findings.extend(crate::analysis::symlinks::scan_root(&path));
+                    all_findings.extend(crate::analysis::windows_extras::scan_tree(&path));
                 }
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {

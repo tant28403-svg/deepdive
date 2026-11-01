@@ -96,6 +96,80 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
         return out;
     }
 
+    // Legacy Office (OLE compound files): macro/DDE indicators.
+    if name.ends_with(".doc") || name.ends_with(".xls") || name.ends_with(".ppt") {
+        let is_ole =
+            bytes.len() >= 8 && bytes[0..8] == [0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+        if is_ole {
+            let strings = crate::analysis::windows_extras::all_strings(bytes);
+            let joined = strings.join("\n").to_lowercase();
+            let macro_markers = [
+                "vbaproject",
+                "vba",
+                "autoopen",
+                "auto_open",
+                "autoexec",
+                "document_open",
+                "workbook_open",
+            ];
+            if macro_markers.iter().any(|m| joined.contains(m)) {
+                out.push(Finding {
+                    id: format!("doc.office-vba-macro-{}", path_str),
+                    severity: Severity::High,
+                    confidence: 0.75,
+                    rule: "doc.office-vba-macro".to_string(),
+                    category: "document".to_string(),
+                    location: Location {
+                        path: path_str.clone(),
+                        line: None,
+                        column: None,
+                    },
+                    message: "Legacy Office document contains VBA macro artifacts".to_string(),
+                    snippet: None,
+                    tags: vec!["office".to_string(), "ole".to_string()],
+                });
+            }
+            if joined.contains("ddeauto") || joined.contains("dde ") {
+                out.push(Finding {
+                    id: format!("doc.office-dde-{}", path_str),
+                    severity: Severity::Critical,
+                    confidence: 0.8,
+                    rule: "doc.office-dde".to_string(),
+                    category: "document".to_string(),
+                    location: Location {
+                        path: path_str.clone(),
+                        line: None,
+                        column: None,
+                    },
+                    message: "Legacy Office document uses DDE (command execution)".to_string(),
+                    snippet: None,
+                    tags: vec!["office".to_string(), "dde".to_string()],
+                });
+            }
+            if (joined.contains("http://") || joined.contains("https://"))
+                && (joined.contains("template") || joined.contains("attach"))
+            {
+                out.push(Finding {
+                    id: format!("doc.office-remote-template-{}", path_str),
+                    severity: Severity::Medium,
+                    confidence: 0.65,
+                    rule: "doc.office-remote-template".to_string(),
+                    category: "document".to_string(),
+                    location: Location {
+                        path: path_str.clone(),
+                        line: None,
+                        column: None,
+                    },
+                    message: "Legacy Office document references a remote template/attachment"
+                        .to_string(),
+                    snippet: None,
+                    tags: vec!["office".to_string(), "ole".to_string()],
+                });
+            }
+        }
+        return out;
+    }
+
     // Office (zip-based)
     if name.ends_with(".docx")
         || name.ends_with(".xlsx")
