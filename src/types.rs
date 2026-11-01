@@ -19,6 +19,17 @@ impl Severity {
             Severity::Critical => "critical",
         }
     }
+
+    pub fn parse(value: &str) -> Option<Severity> {
+        match value.trim().to_lowercase().as_str() {
+            "critical" => Some(Severity::Critical),
+            "high" => Some(Severity::High),
+            "medium" | "moderate" => Some(Severity::Medium),
+            "low" => Some(Severity::Low),
+            "info" | "informational" => Some(Severity::Info),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

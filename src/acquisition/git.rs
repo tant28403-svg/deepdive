@@ -3,7 +3,12 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-pub fn safe_clone(repo: &RepoUrl, dest: &Path, branch: Option<&str>) -> Result<PathBuf> {
+pub fn safe_clone(
+    repo: &RepoUrl,
+    dest: &Path,
+    branch: Option<&str>,
+    submodules: bool,
+) -> Result<PathBuf> {
     let branch = branch.or(repo.branch.as_deref());
     let clone_url = repo.clone_url();
 
@@ -60,6 +65,11 @@ pub fn safe_clone(repo: &RepoUrl, dest: &Path, branch: Option<&str>) -> Result<P
                 String::from_utf8_lossy(&out.stderr)
             );
         }
+    }
+
+    // Submodules only when explicitly requested.
+    if submodules {
+        run_git(dest, &["submodule", "update", "--init", "--recursive"])?;
     }
 
     // Subdir handling: if repo.subdir set, adjust dest to subdir.

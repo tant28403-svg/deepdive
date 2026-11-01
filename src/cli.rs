@@ -1,6 +1,8 @@
-use anyhow::Result;
-use clap::{Parser, Subcommand};
+use anyhow::{Context, Result};
+use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
+
+use crate::engine;
 
 #[derive(Parser, Debug)]
 #[command(
@@ -13,48 +15,73 @@ pub struct Cli {
     pub command: Commands,
 }
 
+#[derive(Args, Debug, Clone)]
+pub struct ScanArgs {
+    /// Output format: text, json, or sarif.
+    #[arg(short, long, default_value = "text")]
+    pub format: String,
+    /// Write the report to a file instead of stdout.
+    #[arg(short, long)]
+    pub out: Option<PathBuf>,
+    /// Minimum severity to report (display only; verdict still uses all findings).
+    #[arg(long, default_value = "info")]
+    pub min_severity: String,
+    /// Skip network queries (uses the local cache).
+    #[arg(long)]
+    pub offline: bool,
+    /// Include git history scanning.
+    #[arg(long)]
+    pub deep: bool,
+    /// Run the target in a sandbox after the static scan.
+    #[arg(long)]
+    pub sandbox: bool,
+    /// Command to run in the sandbox (never invented by deepdive).
+    #[arg(long)]
+    pub sandbox_cmd: Option<String>,
+    /// Skip files larger than this (MB).
+    #[arg(long, default_value_t = 100)]
+    pub max_size: u64,
+    /// Parallelism (defaults to the number of CPUs).
+    #[arg(long)]
+    pub threads: Option<usize>,
+    /// Extra TOML rules file.
+    #[arg(long)]
+    pub rules: Option<PathBuf>,
+    /// Exit with code 2 if any finding reaches this severity.
+    #[arg(long)]
+    pub fail_on: Option<String>,
+    /// Disable colored output.
+    #[arg(long)]
+    pub no_color: bool,
+}
+
+impl From<&ScanArgs> for engine::Options {
+    fn from(args: &ScanArgs) -> Self {
+        engine::Options {
+            format: args.format.clone(),
+            out: args.out.clone(),
+            min_severity: args.min_severity.clone(),
+            offline: args.offline,
+            deep: args.deep,
+            sandbox: args.sandbox,
+            sandbox_cmd: args.sandbox_cmd.clone(),
+            max_size: args.max_size,
+            threads: args.threads,
+            rules: args.rules.iter().cloned().collect(),
+            fail_on: args.fail_on.clone(),
+            no_color: args.no_color,
+        }
+    }
+}
+
 #[derive(Subcommand, Debug)]
 pub enum Commands {
     /// Scan a local file or directory.
     Scan {
         /// Path to file or directory.
         path: PathBuf,
-        /// Output format.
-        #[arg(short, long, default_value = "text")]
-        format: String,
-        /// Write report to file.
-        #[arg(short, long)]
-        out: Option<PathBuf>,
-        /// Minimum severity to report.
-        #[arg(long, default_value = "info")]
-        min_severity: String,
-        /// Skip network queries.
-        #[arg(long)]
-        offline: bool,
-        /// Include git history scan.
-        #[arg(long)]
-        deep: bool,
-        /// Run in sandbox after static scan.
-        #[arg(long)]
-        sandbox: bool,
-        /// Fail CI if severity reached.
-        #[arg(long)]
-        fail_on: Option<String>,
-        /// Command to run in sandbox.
-        #[arg(long)]
-        sandbox_cmd: Option<String>,
-        /// Skip files larger than this (MB).
-        #[arg(long, default_value = "100")]
-        max_size: u64,
-        /// Parallelism.
-        #[arg(long)]
-        threads: Option<usize>,
-        /// Extra rules file.
-        #[arg(long)]
-        rules: Option<PathBuf>,
-        /// Disable colored output.
-        #[arg(long)]
-        no_color: bool,
+        #[command(flatten)]
+        opts: ScanArgs,
     },
     /// Safely clone a remote repo, then scan it.
     Fetch {
@@ -63,36 +90,34 @@ pub enum Commands {
         /// Branch to checkout.
         #[arg(long)]
         branch: Option<String>,
-        /// Subdirectory to scan.
+        /// Subdirectory to scan (relative to the repository root).
         #[arg(long)]
         path: Option<String>,
-        /// Keep cloned repo at this path.
+        /// Keep the cloned repo at this path.
         #[arg(long)]
         keep: Option<PathBuf>,
-        /// Clone submodules.
+        /// Clone submodules (disabled by default).
         #[arg(long)]
         submodules: bool,
+        #[command(flatten)]
+        opts: ScanArgs,
     },
-    /// Deep scan (history + optional sandbox).
+    /// Deep scan (git history + optional sandbox).
     Audit {
-        /// Path or URL.
+        /// Local path or repository URL.
         target: String,
-        /// Sandbox command to run.
+        /// Keep the cloned repo at this path (URL targets only).
         #[arg(long)]
-        sandbox_cmd: Option<String>,
-        /// Run in sandbox after static scan.
-        #[arg(long)]
-        sandbox: bool,
-        /// Fail CI if severity reached.
-        #[arg(long)]
-        fail_on: Option<String>,
+        keep: Option<PathBuf>,
+        #[command(flatten)]
+        opts: ScanArgs,
     },
     /// Manage detection rules.
     Rules {
         #[command(subcommand)]
         action: RulesAction,
     },
-    /// Manage offline cache.
+    /// Manage the offline cache.
     Cache {
         #[command(subcommand)]
         action: CacheAction,
@@ -108,389 +133,75 @@ pub enum Commands {
 
 #[derive(Subcommand, Debug)]
 pub enum RulesAction {
+    /// List built-in rule ids and user rules.
     List,
+    /// Validate a TOML rule file and show its rules.
     Test { file: PathBuf },
 }
 
 #[derive(Subcommand, Debug)]
 pub enum CacheAction {
+    /// Create the cache directory and describe what is cached.
     Update,
+    /// Delete all cached data.
     Clear,
 }
 
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
-            Commands::Scan {
-                path,
-                max_size,
-                format,
-                out,
-                min_severity,
-                offline,
-                deep,
-                sandbox,
-                sandbox_cmd,
-                threads,
-                rules,
-                fail_on,
-                no_color: _,
-            } => {
-                if let Some(n) = threads {
-                    let _ = rayon::ThreadPoolBuilder::new()
-                        .num_threads(n)
-                        .build_global();
-                }
-                use crate::analysis::file_type;
-                use crate::analysis::scan;
-                use crate::analysis::walker;
-                use crate::risk;
-                use crate::types::{Finding, Severity};
-                use std::collections::BTreeMap;
-
-                let files = walker::walk_files(&path, max_size);
-                let mut all_findings: Vec<Finding> = Vec::new();
-                if path.is_dir() {
-                    all_findings.extend(crate::analysis::symlinks::scan_root(&path));
-                    all_findings.extend(crate::analysis::windows_extras::scan_tree(&path));
-                }
-                let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-                for f in &files {
-                    let ft = file_type::detect(f);
-                    *counts.entry(ft.as_str()).or_insert(0) += 1;
-                    let findings = scan::read_and_scan(f);
-                    all_findings.extend(findings);
-                }
-
-                // Dependency audit.
-                let deps = crate::analysis::deps::collect_dependencies(&files);
-                if !deps.is_empty() {
-                    let dep_findings = crate::analysis::deps::audit_dependencies(&deps, offline);
-                    all_findings.extend(dep_findings);
-                }
-
-                // Custom rules.
-                if let Some(rp) = &rules {
-                    let r = crate::analysis::rules::load_rules_file(rp);
-                    for f in &files {
-                        if let Ok(content) = std::fs::read_to_string(f) {
-                            let rf = crate::analysis::rules::scan_with_rules(f, &content, &r);
-                            all_findings.extend(rf);
-                        }
-                    }
-                }
-
-                // Git history (deep mode).
-                if deep {
-                    let hist = crate::analysis::git_history::scan_git_history(&path);
-                    all_findings.extend(hist);
-                }
-
-                // Sandbox (opt-in).
-                if sandbox || sandbox_cmd.is_some() {
-                    let cmd = sandbox_cmd.clone().unwrap_or_else(|| "true".to_string());
-                    let result = if crate::sandbox::docker::docker_available() {
-                        let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
-                            .unwrap_or_else(|_| "ubuntu:22.04".to_string());
-                        crate::sandbox::docker::run_sandbox(&cmd, &path, &image, 300)
-                    } else if cfg!(windows) {
-                        #[cfg(windows)]
-                        {
-                            crate::sandbox::windows_native::run_native(&cmd, &path, 300)
-                        }
-                        #[cfg(not(windows))]
-                        {
-                            Err(anyhow::anyhow!(
-                                "Windows sandbox not available on this platform"
-                            ))
-                        }
-                    } else if crate::sandbox::linux_native::bwrap_available()
-                        || crate::sandbox::linux_native::firejail_available()
-                    {
-                        crate::sandbox::linux_native::run_native(&cmd, &path, 300)
-                    } else {
-                        Err(anyhow::anyhow!(
-                            "no sandbox available (install docker, or bubblewrap/firejail on Linux)"
-                        ))
-                    };
-                    match result {
-                        Ok(report) => {
-                            all_findings
-                                .extend(crate::sandbox::docker::behavioral_findings(&report));
-                            println!();
-                            println!("[sandbox] image: {}", report.image);
-                            println!("[sandbox] exit code: {:?}", report.exit_code);
-                            println!("[sandbox] duration: {} ms", report.duration_ms);
-                            println!("[sandbox] files created: {}", report.files_created.len());
-                            println!("[sandbox] files modified: {}", report.files_modified.len());
-                            println!(
-                                "[sandbox] network indicators: {}",
-                                report.network_indicators.len()
-                            );
-                            if !report.stdout.is_empty() {
-                                println!("[sandbox stdout]\n{}", report.stdout);
-                            }
-                            if !report.stderr.is_empty() {
-                                println!("[sandbox stderr]\n{}", report.stderr);
-                            }
-                        }
-                        Err(e) => {
-                            eprintln!("[sandbox] failed: {}", e);
-                        }
-                    }
-                }
-
-                // Filter by min_severity for reporting.
-                let min_sev = match min_severity.to_lowercase().as_str() {
-                    "critical" => Some(crate::types::Severity::Critical),
-                    "high" => Some(crate::types::Severity::High),
-                    "medium" => Some(crate::types::Severity::Medium),
-                    "low" => Some(crate::types::Severity::Low),
-                    _ => None,
-                };
-                if let Some(ms) = min_sev {
-                    all_findings.retain(|f| f.severity >= ms);
-                }
-
-                let score = risk::score(&all_findings);
-                let v = risk::verdict(score, &all_findings);
-
-                if format == "json" {
-                    let json = serde_json::to_string_pretty(&serde_json::json!({
-                        "files_scanned": files.len(),
-                        "risk_score": score,
-                        "verdict": v.as_str(),
-                        "findings": all_findings,
-                    }))?;
-                    if let Some(o) = out {
-                        std::fs::write(o, json)?;
-                    } else {
-                        println!("{}", json);
-                    }
-                } else if format == "sarif" {
-                    let s = crate::reporting::sarif::render(
-                        &all_findings,
-                        files.len(),
-                        env!("CARGO_PKG_VERSION"),
-                    );
-                    if let Some(o) = out {
-                        std::fs::write(o, s)?;
-                    } else {
-                        println!("{}", s);
-                    }
-                } else {
-                    println!("deepdive scan: {}", path.display());
-                    println!("files scanned: {}", files.len());
-                    for (k, vv) in &counts {
-                        println!("  {:<12} {}", k, vv);
-                    }
-                    println!();
-                    println!("VERDICT: {}  (risk score {}/100)", v.as_str(), score);
-                    println!();
-                    let mut sorted = all_findings.clone();
-                    sorted.sort_by_key(|a| std::cmp::Reverse(a.severity));
-                    for f in &sorted {
-                        println!(
-                            "[{}] {} - {}",
-                            f.severity.as_str().to_uppercase(),
-                            f.rule,
-                            f.location.path
-                        );
-                        if let Some(line) = f.location.line {
-                            println!("  line {}: {}", line, f.message);
-                        } else {
-                            println!("  {}", f.message);
-                        }
-                        if let Some(snip) = &f.snippet {
-                            println!("  > {}", snip);
-                        }
-                    }
-                    println!();
-                    let mut c = BTreeMap::new();
-                    for f in &all_findings {
-                        *c.entry(f.severity).or_insert(0usize) += 1;
-                    }
-                    println!(
-                        "Summary: critical={}, high={}, medium={}, low={}, info={}",
-                        c.get(&Severity::Critical).unwrap_or(&0),
-                        c.get(&Severity::High).unwrap_or(&0),
-                        c.get(&Severity::Medium).unwrap_or(&0),
-                        c.get(&Severity::Low).unwrap_or(&0),
-                        c.get(&Severity::Info).unwrap_or(&0),
-                    );
-                }
-                // Exit code.
-                let code = if let Some(threshold) = &fail_on {
-                    let thr = match threshold.to_lowercase().as_str() {
-                        "critical" => crate::types::Severity::Critical,
-                        "high" => crate::types::Severity::High,
-                        "medium" => crate::types::Severity::Medium,
-                        "low" => crate::types::Severity::Low,
-                        _ => crate::types::Severity::Info,
-                    };
-                    if all_findings.iter().any(|f| f.severity >= thr) {
-                        2
-                    } else {
-                        0
-                    }
-                } else {
-                    match v {
-                        crate::types::Verdict::Safe => 0,
-                        crate::types::Verdict::Review => 1,
-                        _ => 2,
-                    }
-                };
+            Commands::Scan { path, opts } => {
+                let code = engine::execute(&path, &engine::Options::from(&opts))?;
                 std::process::exit(code);
             }
             Commands::Fetch {
                 url,
                 branch,
-                path: subdir,
+                path,
                 keep,
-                submodules: _,
+                submodules,
+                opts,
             } => {
-                use crate::acquisition::git::safe_clone;
-                use crate::acquisition::url::RepoUrl;
-
-                let repo = RepoUrl::parse(&url)?;
-                let dest = if let Some(k) = keep {
-                    k.clone()
-                } else {
-                    std::env::temp_dir().join(format!("deepdive-{}", repo.repo))
-                };
-                println!("Cloning {} ...", repo.full_name());
-                let scanned_path = safe_clone(&repo, &dest, branch.as_deref())?;
-                println!("Cloned to {}", dest.display());
-
-                // Now scan.
-                // Reuse scan logic by invoking a recursive scan via analysis.
-                use crate::analysis::file_type;
-                use crate::analysis::scan;
-                use crate::analysis::walker;
-                use crate::risk;
-                use crate::types::Finding;
-                use std::collections::BTreeMap;
-
-                let files = walker::walk_files(&scanned_path, 100);
-                let mut all_findings: Vec<Finding> = Vec::new();
-                if scanned_path.is_dir() {
-                    all_findings.extend(crate::analysis::symlinks::scan_root(&scanned_path));
-                    all_findings.extend(crate::analysis::windows_extras::scan_tree(&scanned_path));
-                }
-                let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-                for f in &files {
-                    let ft = file_type::detect(f);
-                    *counts.entry(ft.as_str()).or_insert(0) += 1;
-                    all_findings.extend(scan::read_and_scan(f));
-                }
-                let deps = crate::analysis::deps::collect_dependencies(&files);
-                if !deps.is_empty() {
-                    all_findings.extend(crate::analysis::deps::audit_dependencies(&deps, false));
-                }
-                let score = risk::score(&all_findings);
-                let v = risk::verdict(score, &all_findings);
-                println!("files scanned: {}", files.len());
-                println!("VERDICT: {}  (risk score {}/100)", v.as_str(), score);
-                println!("Summary: {} findings", all_findings.len());
-                let _ = subdir;
-                Ok(())
-            }
-            Commands::Audit {
-                target,
-                sandbox_cmd,
-                fail_on: _,
-                sandbox: _,
-            } => {
-                use crate::analysis::file_type;
-                use crate::analysis::scan;
-                use crate::analysis::walker;
-                use crate::risk;
-                use crate::types::Finding;
-                use std::collections::BTreeMap;
-                use std::path::PathBuf;
-
-                let path = PathBuf::from(&target);
-                if !path.exists() {
-                    println!("audit: target not found locally: {}", target);
-                    println!("Hint: use 'deepdive fetch <url>' first, or pass a local path.");
-                    return Ok(());
-                }
-                let files = walker::walk_files(&path, 100);
-                let mut all_findings: Vec<Finding> = Vec::new();
-                if path.is_dir() {
-                    all_findings.extend(crate::analysis::symlinks::scan_root(&path));
-                    all_findings.extend(crate::analysis::windows_extras::scan_tree(&path));
-                }
-                let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-                for f in &files {
-                    let ft = file_type::detect(f);
-                    *counts.entry(ft.as_str()).or_insert(0) += 1;
-                    all_findings.extend(scan::read_and_scan(f));
-                }
-                let deps = crate::analysis::deps::collect_dependencies(&files);
-                if !deps.is_empty() {
-                    all_findings.extend(crate::analysis::deps::audit_dependencies(&deps, false));
-                }
-
-                if let Some(cmd) = &sandbox_cmd {
-                    let result = if crate::sandbox::docker::docker_available() {
-                        let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
-                            .unwrap_or_else(|_| "ubuntu:22.04".to_string());
-                        crate::sandbox::docker::run_sandbox(cmd, &path, &image, 300)
-                    } else if cfg!(windows) {
-                        #[cfg(windows)]
-                        {
-                            crate::sandbox::windows_native::run_native(cmd, &path, 300)
+                let (scanned, temp) = clone_repo(&url, branch.as_deref(), &keep, submodules)?;
+                let target = match path {
+                    Some(subdir) => {
+                        let joined = scanned.join(&subdir);
+                        if !joined.exists() {
+                            anyhow::bail!("subdirectory not found in repository: {}", subdir);
                         }
-                        #[cfg(not(windows))]
-                        {
-                            Err(anyhow::anyhow!(
-                                "Windows sandbox not available on this platform"
-                            ))
-                        }
-                    } else if crate::sandbox::linux_native::bwrap_available()
-                        || crate::sandbox::linux_native::firejail_available()
-                    {
-                        crate::sandbox::linux_native::run_native(cmd, &path, 300)
-                    } else {
-                        Err(anyhow::anyhow!(
-                            "no sandbox available (install docker, or bubblewrap/firejail on Linux)"
-                        ))
-                    };
-                    match result {
-                        Ok(report) => {
-                            all_findings
-                                .extend(crate::sandbox::docker::behavioral_findings(&report));
-                            println!("[sandbox] exit code: {:?}", report.exit_code);
-                            println!("[sandbox] files created: {}", report.files_created.len());
-                            println!("[sandbox] files modified: {}", report.files_modified.len());
-                            if !report.network_indicators.is_empty() {
-                                println!(
-                                    "[sandbox] network: {}",
-                                    report.network_indicators.join(", ")
-                                );
-                            }
-                        }
-                        Err(e) => eprintln!("[sandbox] failed: {}", e),
+                        joined
                     }
+                    None => scanned,
+                };
+                let code = engine::execute(&target, &engine::Options::from(&opts))?;
+                if let Some(dir) = temp {
+                    drop(dir);
                 }
-
-                let score = risk::score(&all_findings);
-                let v = risk::verdict(score, &all_findings);
-                println!("deepdive audit: {}", path.display());
-                println!("files scanned: {}", files.len());
-                println!("VERDICT: {}  (risk score {}/100)", v.as_str(), score);
-                println!("Summary: {} findings", all_findings.len());
-                Ok(())
+                std::process::exit(code);
             }
-            Commands::Rules { .. } => {
-                println!("rules: not yet implemented");
-                Ok(())
+            Commands::Audit { target, keep, opts } => {
+                let local = PathBuf::from(&target);
+                let (scan_path, temp) = if local.exists() {
+                    (local, None)
+                } else {
+                    clone_repo(&target, None, &keep, false)?
+                };
+                if !scan_path.exists() {
+                    anyhow::bail!(
+                        "target not found locally or as a repository URL: {}",
+                        target
+                    );
+                }
+                let mut options = engine::Options::from(&opts);
+                options.deep = true;
+                let code = engine::execute(&scan_path, &options)?;
+                if let Some(dir) = temp {
+                    drop(dir);
+                }
+                std::process::exit(code);
             }
-            Commands::Cache { .. } => {
-                println!("cache: not yet implemented");
-                Ok(())
-            }
+            Commands::Rules { action } => run_rules(action),
+            Commands::Cache { action } => run_cache(action),
             Commands::Completions { shell } => {
                 use clap::CommandFactory;
                 let mut cmd = Cli::command();
@@ -501,6 +212,118 @@ impl Cli {
                 println!("deepdive {}", env!("CARGO_PKG_VERSION"));
                 Ok(())
             }
+        }
+    }
+}
+
+fn clone_repo(
+    url: &str,
+    branch: Option<&str>,
+    keep: &Option<PathBuf>,
+    submodules: bool,
+) -> Result<(PathBuf, Option<tempfile::TempDir>)> {
+    use crate::acquisition::git::safe_clone;
+    use crate::acquisition::url::RepoUrl;
+
+    let repo = RepoUrl::parse(url)?;
+    let (dest, temp) = match keep {
+        Some(path) => (path.clone(), None),
+        None => {
+            let temp = tempfile::tempdir().context("create temp clone dir")?;
+            (temp.path().join(&repo.repo), Some(temp))
+        }
+    };
+    println!("Cloning {} ...", repo.full_name());
+    let scanned = safe_clone(&repo, &dest, branch, submodules)?;
+    println!("Cloned to {}", dest.display());
+    Ok((scanned, temp))
+}
+
+fn run_rules(action: RulesAction) -> Result<()> {
+    use crate::analysis::rules;
+    use crate::config;
+
+    match action {
+        RulesAction::List => {
+            println!("Built-in rules ({}):", rules::builtin_rule_ids().len());
+            for id in rules::builtin_rule_ids() {
+                println!("  {}", id);
+            }
+            if let Some(dir) = config::rules_dir() {
+                println!();
+                println!("User rules directory: {}", dir.display());
+                if let Ok(entries) = std::fs::read_dir(&dir) {
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
+                            continue;
+                        }
+                        let custom = rules::load_rules_file(&path);
+                        println!("  {} ({} rule(s))", path.display(), custom.len());
+                        for rule in &custom {
+                            println!("    - {}", rule.name);
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+        RulesAction::Test { file } => {
+            if !file.is_file() {
+                anyhow::bail!("rules file not found: {}", file.display());
+            }
+            let parsed = rules::load_rules_file(&file);
+            if parsed.is_empty() {
+                anyhow::bail!(
+                    "no rules parsed from {} (expected [[rules]] entries or a rule array)",
+                    file.display()
+                );
+            }
+            let errors = rules::validate_rules(&parsed);
+            println!("{}: {} rule(s)", file.display(), parsed.len());
+            for rule in &parsed {
+                println!(
+                    "  {} [{}] {} pattern(s)",
+                    rule.name,
+                    rule.severity,
+                    rule.patterns.len()
+                );
+            }
+            if errors.is_empty() {
+                println!("OK: all patterns compile");
+                Ok(())
+            } else {
+                for error in &errors {
+                    eprintln!("ERROR: {}", error);
+                }
+                std::process::exit(1);
+            }
+        }
+    }
+}
+
+fn run_cache(action: CacheAction) -> Result<()> {
+    use crate::config;
+
+    let dir = config::cache_dir().context("could not determine cache directory")?;
+    match action {
+        CacheAction::Update => {
+            std::fs::create_dir_all(&dir)?;
+            println!("cache directory: {}", dir.display());
+            println!(
+                "OSV query results are cached automatically; run an online scan to populate it."
+            );
+            println!("Use --offline to read from this cache without network access.");
+            Ok(())
+        }
+        CacheAction::Clear => {
+            if dir.exists() {
+                std::fs::remove_dir_all(&dir)?;
+                println!("cleared {}", dir.display());
+            } else {
+                println!("cache is already empty ({})", dir.display());
+            }
+            Ok(())
         }
     }
 }

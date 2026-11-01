@@ -62,3 +62,111 @@ fn version_command() {
         .success()
         .stdout(predicate::str::contains("deepdive"));
 }
+
+#[test]
+fn min_severity_filters_display_but_not_verdict() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.js"), "eval(\"2+2\");").unwrap();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--min-severity",
+            "critical",
+        ])
+        .assert()
+        .code(1)
+        .stdout(predicate::str::contains("VERDICT: REVIEW"))
+        .stdout(predicate::str::contains("dangerous.exec-eval").not());
+}
+
+#[test]
+fn fail_on_threshold_controls_exit_code() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("a.js"),
+        "const key = 'AKIAIOSFODNN7EXAMPLE';",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".deepdive.toml"),
+        "severity_overrides = { \"secrets.aws-access-key\" = \"low\" }\n",
+    )
+    .unwrap();
+    // Downgraded to low: a high threshold stays green, a low one fails.
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap(), "--fail-on", "high"])
+        .assert()
+        .success();
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap(), "--fail-on", "low"])
+        .assert()
+        .code(2);
+}
+
+#[test]
+fn project_allowlist_suppresses_findings() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("a.js"),
+        "const key = 'AKIAIOSFODNN7EXAMPLE';",
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join(".deepdive.toml"),
+        "[[allow]]\nrule = \"secrets.*\"\nreason = \"test fixture\"\n",
+    )
+    .unwrap();
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("VERDICT: SAFE"))
+        .stdout(predicate::str::contains("Suppressed by .deepdive.toml: 1"));
+}
+
+#[test]
+fn rules_test_validates_a_file() {
+    let dir = TempDir::new().unwrap();
+    let rules = dir.path().join("rules.toml");
+    std::fs::write(
+        &rules,
+        "[[rules]]\nname = \"custom.secret\"\npatterns = [\"TOKEN_[A-Z]+\"]\nseverity = \"high\"\n",
+    )
+    .unwrap();
+    deepdive()
+        .args(["rules", "test", rules.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OK: all patterns compile"));
+}
+
+#[test]
+fn rules_list_shows_builtins() {
+    deepdive()
+        .args(["rules", "list"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("secrets.aws-access-key"))
+        .stdout(predicate::str::contains("archive.path-traversal"));
+}
+
+#[test]
+fn cache_update_and_clear_use_env_override() {
+    let dir = TempDir::new().unwrap();
+    let cache = dir.path().join("cache");
+    deepdive()
+        .args(["cache", "update"])
+        .env("DEEPDIVE_CACHE_DIR", &cache)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cache directory"));
+    assert!(cache.exists());
+    deepdive()
+        .args(["cache", "clear"])
+        .env("DEEPDIVE_CACHE_DIR", &cache)
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("cleared"));
+    assert!(!cache.exists());
+}

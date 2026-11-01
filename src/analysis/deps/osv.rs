@@ -1,7 +1,34 @@
 use crate::analysis::deps::Dependency;
 use crate::types::{Finding, Location, Severity};
+use sha2::{Digest, Sha256};
+use std::path::PathBuf;
 
 const OSV_URL: &str = "https://api.osv.dev/v1/query";
+
+fn cache_path(ecosystem: &str, name: &str, version: &str) -> Option<PathBuf> {
+    let dir = crate::config::cache_dir()?.join("osv");
+    let key = format!("{}|{}|{}", ecosystem, name, version);
+    let digest = Sha256::digest(key.as_bytes());
+    Some(dir.join(format!("{}.json", hex::encode(digest))))
+}
+
+fn read_cache(ecosystem: &str, name: &str, version: &str) -> Option<Vec<String>> {
+    let path = cache_path(ecosystem, name, version)?;
+    let content = std::fs::read_to_string(path).ok()?;
+    serde_json::from_str(&content).ok()
+}
+
+fn write_cache(ecosystem: &str, name: &str, version: &str, ids: &[String]) {
+    let Some(path) = cache_path(ecosystem, name, version) else {
+        return;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(json) = serde_json::to_string(ids) {
+        let _ = std::fs::write(path, json);
+    }
+}
 
 pub fn query_vulns(ecosystem: &str, name: &str, version: &str) -> Vec<String> {
     let eco = match ecosystem {
@@ -11,6 +38,9 @@ pub fn query_vulns(ecosystem: &str, name: &str, version: &str) -> Vec<String> {
         "go" => "Go",
         _ => return vec![],
     };
+    if let Some(cached) = read_cache(ecosystem, name, version) {
+        return cached;
+    }
     let body = serde_json::json!({
         "package": { "name": name, "ecosystem": eco },
         "version": version,
@@ -36,6 +66,7 @@ pub fn query_vulns(ecosystem: &str, name: &str, version: &str) -> Vec<String> {
             }
         }
     }
+    write_cache(ecosystem, name, version, &ids);
     ids
 }
 
@@ -43,11 +74,12 @@ pub fn audit_dependencies(deps: &[Dependency], offline: bool) -> Vec<Finding> {
     let mut out = Vec::new();
     // Typosquatting check (offline, always).
     out.extend(typosquat_findings(deps));
-    if offline {
-        return out;
-    }
     for dep in deps {
-        let vulns = query_vulns(&dep.ecosystem, &dep.name, &dep.version);
+        let vulns = if offline {
+            read_cache(&dep.ecosystem, &dep.name, &dep.version).unwrap_or_default()
+        } else {
+            query_vulns(&dep.ecosystem, &dep.name, &dep.version)
+        };
         for v in vulns {
             out.push(Finding {
                 id: format!("deps.osv-{}-{}-{}", dep.ecosystem, dep.name, v),

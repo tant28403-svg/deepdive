@@ -4,6 +4,7 @@ mod acquisition;
 mod analysis;
 mod cli;
 mod config;
+mod engine;
 mod reporting;
 mod risk;
 mod sandbox;
