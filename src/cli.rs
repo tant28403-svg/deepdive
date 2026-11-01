@@ -195,8 +195,49 @@ impl Cli {
                 }
                 Ok(())
             }
-            Commands::Fetch { .. } => {
-                println!("fetch: not yet implemented");
+            Commands::Fetch {
+                url,
+                branch,
+                path: subdir,
+                keep,
+                submodules: _,
+            } => {
+                use crate::acquisition::git::safe_clone;
+                use crate::acquisition::url::RepoUrl;
+
+                let repo = RepoUrl::parse(&url)?;
+                let dest = if let Some(k) = keep {
+                    k.clone()
+                } else {
+                    std::env::temp_dir().join(format!("deepdive-{}", repo.repo))
+                };
+                println!("Cloning {} ...", repo.full_name());
+                let scanned_path = safe_clone(&repo, &dest, branch.as_deref())?;
+                println!("Cloned to {}", dest.display());
+
+                // Now scan.
+                // Reuse scan logic by invoking a recursive scan via analysis.
+                use crate::analysis::file_type;
+                use crate::analysis::scan;
+                use crate::analysis::walker;
+                use crate::risk;
+                use crate::types::Finding;
+                use std::collections::BTreeMap;
+
+                let files = walker::walk_files(&scanned_path, 100);
+                let mut all_findings: Vec<Finding> = Vec::new();
+                let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+                for f in &files {
+                    let ft = file_type::detect(f);
+                    *counts.entry(ft.as_str()).or_insert(0) += 1;
+                    all_findings.extend(scan::read_and_scan(f));
+                }
+                let score = risk::score(&all_findings);
+                let v = risk::verdict(score, &all_findings);
+                println!("files scanned: {}", files.len());
+                println!("VERDICT: {}  (risk score {}/100)", v.as_str(), score);
+                println!("Summary: {} findings", all_findings.len());
+                let _ = subdir;
                 Ok(())
             }
             Commands::Audit { .. } => {
