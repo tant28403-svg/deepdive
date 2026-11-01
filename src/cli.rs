@@ -159,6 +159,17 @@ impl Cli {
                     } else {
                         println!("{}", json);
                     }
+                } else if format == "sarif" {
+                    let s = crate::reporting::sarif::render(
+                        &all_findings,
+                        files.len(),
+                        env!("CARGO_PKG_VERSION"),
+                    );
+                    if let Some(o) = out {
+                        std::fs::write(o, s)?;
+                    } else {
+                        println!("{}", s);
+                    }
                 } else {
                     println!("deepdive scan: {}", path.display());
                     println!("files scanned: {}", files.len());
