@@ -37,6 +37,9 @@ pub enum Commands {
         /// Run in sandbox after static scan.
         #[arg(long)]
         sandbox: bool,
+        /// Fail CI if severity reached.
+        #[arg(long)]
+        fail_on: Option<String>,
         /// Command to run in sandbox.
         #[arg(long)]
         sandbox_cmd: Option<String>,
@@ -77,6 +80,9 @@ pub enum Commands {
         /// Sandbox command to run.
         #[arg(long)]
         sandbox_cmd: Option<String>,
+        /// Run in sandbox after static scan.
+        #[arg(long)]
+        sandbox: bool,
         /// Fail CI if severity reached.
         #[arg(long)]
         fail_on: Option<String>,
@@ -120,15 +126,21 @@ impl Cli {
                 max_size,
                 format,
                 out,
-                min_severity: _,
+                min_severity,
                 offline,
                 deep,
                 sandbox,
                 sandbox_cmd,
-                threads: _,
+                threads,
                 rules,
+                fail_on,
                 no_color: _,
             } => {
+                if let Some(n) = threads {
+                    let _ = rayon::ThreadPoolBuilder::new()
+                        .num_threads(n)
+                        .build_global();
+                }
                 use crate::analysis::file_type;
                 use crate::analysis::scan;
                 use crate::analysis::walker;
@@ -215,6 +227,18 @@ impl Cli {
                     }
                 }
 
+                // Filter by min_severity for reporting.
+                let min_sev = match min_severity.to_lowercase().as_str() {
+                    "critical" => Some(crate::types::Severity::Critical),
+                    "high" => Some(crate::types::Severity::High),
+                    "medium" => Some(crate::types::Severity::Medium),
+                    "low" => Some(crate::types::Severity::Low),
+                    _ => None,
+                };
+                if let Some(ms) = min_sev {
+                    all_findings.retain(|f| f.severity >= ms);
+                }
+
                 let score = risk::score(&all_findings);
                 let v = risk::verdict(score, &all_findings);
 
@@ -282,11 +306,26 @@ impl Cli {
                         c.get(&Severity::Info).unwrap_or(&0),
                     );
                 }
-                // Exit code based on verdict.
-                let code = match v {
-                    crate::types::Verdict::Safe => 0,
-                    crate::types::Verdict::Review => 1,
-                    _ => 2,
+                // Exit code.
+                let code = if let Some(threshold) = &fail_on {
+                    let thr = match threshold.to_lowercase().as_str() {
+                        "critical" => crate::types::Severity::Critical,
+                        "high" => crate::types::Severity::High,
+                        "medium" => crate::types::Severity::Medium,
+                        "low" => crate::types::Severity::Low,
+                        _ => crate::types::Severity::Info,
+                    };
+                    if all_findings.iter().any(|f| f.severity >= thr) {
+                        2
+                    } else {
+                        0
+                    }
+                } else {
+                    match v {
+                        crate::types::Verdict::Safe => 0,
+                        crate::types::Verdict::Review => 1,
+                        _ => 2,
+                    }
                 };
                 std::process::exit(code);
             }
@@ -343,6 +382,7 @@ impl Cli {
                 target,
                 sandbox_cmd,
                 fail_on: _,
+                sandbox: _,
             } => {
                 use crate::analysis::file_type;
                 use crate::analysis::scan;
