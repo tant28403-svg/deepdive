@@ -1,0 +1,31 @@
+# Rust build artifacts
+target/
+*.pdb
+*.rs.bk
+
+# Cargo
+Cargo.lock.bak
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Local config / caches
+.deepdive/
+*.log
+
+# Scan temp dirs
+revsafe-*/
+deepdive-*/
+tmp/
+
+# Secrets (never commit)
+.env
+*.pem
+*.key

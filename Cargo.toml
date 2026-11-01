@@ -1,0 +1,98 @@
+[package]
+name = "deepdive"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Reverse-engineer and safety-check repositories and files before running them."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/tant28403-svg/deepdive"
+readme = "README.md"
+keywords = ["security", "malware", "scanner", "reverse-engineering"]
+categories = ["command-line-utilities", "development-tools"]
+
+[dependencies]
+# CLI
+clap = { version = "4", features = ["derive", "color"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# File walking
+walkdir = "2"
+ignore = "0.4"
+
+# Regex
+regex = "1"
+fancy-regex = "0.13"
+
+# Binary parsing (ELF/PE/Mach-O)
+goblin = "0.8"
+
+# Hashing / encoding
+sha2 = "0.10"
+base64 = "0.22"
+hex = "0.4"
+
+# Archives
+zip = "2"
+tar = "0.4"
+flate2 = "1"
+
+# Temp dirs
+tempfile = "3"
+
+# Progress / output
+indicatif = "0.17"
+owo-colors = "4"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# HTTP (rustls = no OpenSSL dep)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+
+# Git (pure Rust)
+gix = { version = "0.66", default-features = false, features = ["basic", "blocking-http-transport-reqwest-rust-tls"] }
+
+# Parallelism
+rayon = "1"
+
+# Cross-platform paths
+dunce = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "1"
+
+# XDG dirs
+directories = "5"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+
+[features]
+default = ["git-backend-gix"]
+git-backend-gix = []
+git-backend-git2 = ["dep:git2"]
+
+[dependencies.git2]
+version = "0.19"
+optional = true
+
+[[bin]]
+name = "deepdive"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+opt-level = 3
