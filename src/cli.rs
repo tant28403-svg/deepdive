@@ -150,6 +150,9 @@ impl Cli {
 
                 let files = walker::walk_files(&path, max_size);
                 let mut all_findings: Vec<Finding> = Vec::new();
+                if path.is_dir() {
+                    all_findings.extend(crate::analysis::symlinks::scan_root(&path));
+                }
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {
                     let ft = file_type::detect(f);
@@ -196,7 +199,9 @@ impl Cli {
                         }
                         #[cfg(not(windows))]
                         {
-                            Err(anyhow::anyhow!("Windows sandbox not available on this platform"))
+                            Err(anyhow::anyhow!(
+                                "Windows sandbox not available on this platform"
+                            ))
                         }
                     } else if crate::sandbox::linux_native::bwrap_available()
                         || crate::sandbox::linux_native::firejail_available()
@@ -367,6 +372,9 @@ impl Cli {
 
                 let files = walker::walk_files(&scanned_path, 100);
                 let mut all_findings: Vec<Finding> = Vec::new();
+                if scanned_path.is_dir() {
+                    all_findings.extend(crate::analysis::symlinks::scan_root(&scanned_path));
+                }
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {
                     let ft = file_type::detect(f);
@@ -407,6 +415,9 @@ impl Cli {
                 }
                 let files = walker::walk_files(&path, 100);
                 let mut all_findings: Vec<Finding> = Vec::new();
+                if path.is_dir() {
+                    all_findings.extend(crate::analysis::symlinks::scan_root(&path));
+                }
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {
                     let ft = file_type::detect(f);
@@ -430,7 +441,9 @@ impl Cli {
                         }
                         #[cfg(not(windows))]
                         {
-                            Err(anyhow::anyhow!("Windows sandbox not available on this platform"))
+                            Err(anyhow::anyhow!(
+                                "Windows sandbox not available on this platform"
+                            ))
                         }
                     } else if crate::sandbox::linux_native::bwrap_available()
                         || crate::sandbox::linux_native::firejail_available()
