@@ -190,7 +190,14 @@ impl Cli {
                             .unwrap_or_else(|_| "ubuntu:22.04".to_string());
                         crate::sandbox::docker::run_sandbox(&cmd, &path, &image, 300)
                     } else if cfg!(windows) {
-                        crate::sandbox::windows_native::run_native(&cmd, &path, 300)
+                        #[cfg(windows)]
+                        {
+                            crate::sandbox::windows_native::run_native(&cmd, &path, 300)
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            Err(anyhow::anyhow!("Windows sandbox not available on this platform"))
+                        }
                     } else if crate::sandbox::linux_native::bwrap_available()
                         || crate::sandbox::linux_native::firejail_available()
                     {
@@ -417,7 +424,14 @@ impl Cli {
                             .unwrap_or_else(|_| "ubuntu:22.04".to_string());
                         crate::sandbox::docker::run_sandbox(cmd, &path, &image, 300)
                     } else if cfg!(windows) {
-                        crate::sandbox::windows_native::run_native(cmd, &path, 300)
+                        #[cfg(windows)]
+                        {
+                            crate::sandbox::windows_native::run_native(cmd, &path, 300)
+                        }
+                        #[cfg(not(windows))]
+                        {
+                            Err(anyhow::anyhow!("Windows sandbox not available on this platform"))
+                        }
                     } else if crate::sandbox::linux_native::bwrap_available()
                         || crate::sandbox::linux_native::firejail_available()
                     {

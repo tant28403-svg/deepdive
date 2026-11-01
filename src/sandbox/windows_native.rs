@@ -1,19 +1,29 @@
+#[cfg(windows)]
 use crate::types::SandboxReport;
+#[cfg(windows)]
 use anyhow::{Context, Result};
+#[cfg(windows)]
 use std::ffi::OsStr;
+#[cfg(windows)]
 use std::os::windows::ffi::OsStrExt;
+#[cfg(windows)]
 use std::path::Path;
+#[cfg(windows)]
 use std::time::Instant;
+#[cfg(windows)]
 use windows::Win32::Foundation::CloseHandle;
+#[cfg(windows)]
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
     SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
 };
+#[cfg(windows)]
 use windows::Win32::System::Threading::{
     CreateProcessW, ResumeThread, CREATE_SUSPENDED, PROCESS_INFORMATION, STARTUPINFOW,
 };
 
+#[cfg(windows)]
 pub fn run_native(cmd: &str, target: &Path, timeout_secs: u64) -> Result<SandboxReport> {
     let mut report = SandboxReport {
         command: cmd.to_string(),
