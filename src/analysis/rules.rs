@@ -221,6 +221,16 @@ pub fn builtin_rule_ids() -> &'static [&'static str] {
         "config.terraform-wildcard-iam",
         "deps.known-vulnerability",
         "deps.typosquatting",
+        "deps.invalid-lockfile",
+        "deps.lockfile-outdated",
+        "deps.lockfile-missing-integrity",
+        "deps.tampered-integrity",
+        "deps.insecure-resolution",
+        "deps.unpinned-git-dependency",
+        "deps.insecure-registry",
+        "deps.registry-missing-auth",
+        "deps.dependency-confusion",
+        "deps.manifest-drift",
     ]
 }
 

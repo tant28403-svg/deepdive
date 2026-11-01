@@ -36,6 +36,20 @@ including `and`/`or`/`not`, `N of`, `all of`, wildcards, and common modifiers
 (`contains`, `startswith`, `endswith`, `re`, `all`). It is intended for dropped
 command-line/script artifacts, not event-log correlation.
 
+## Dependency checks
+
+deepdive reads npm, pnpm, Yarn, Cargo, pip, Go, and Bundler metadata. In addition to
+OSV advisories and typosquatting, it flags:
+
+- lockfile entries resolved over plain HTTP, unpinned git references, missing or
+  malformed integrity hashes, and outdated lockfile versions;
+- private-scope npm packages that resolve from the public registry, `--extra-index-url`
+  in `requirements.txt`, and private registries configured without `always-auth`;
+- manifest drift between `package.json`/`Pipfile`/`go.mod` and their lockfiles.
+
+These checks are static and offline. Upstream hash verification against registry APIs is
+planned for a later release.
+
 ## Install
 
 ### From source (clone from GitHub)

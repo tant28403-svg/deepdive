@@ -326,3 +326,33 @@ fn sbom_writes_to_out_file() {
     assert!(content.contains("\"bomFormat\": \"CycloneDX\""));
     assert!(content.contains("lodash"));
 }
+
+#[test]
+fn lockfile_integrity_is_reported() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{ "dependencies": { "evil": "1.0.0", "ghost": "2.0.0" } }"#,
+    )
+    .unwrap();
+    std::fs::write(
+        dir.path().join("package-lock.json"),
+        r#"{
+  "lockfileVersion": 3,
+  "packages": {
+    "node_modules/evil": {
+      "version": "1.0.0",
+      "resolved": "http://registry.example/evil-1.0.0.tgz",
+      "integrity": "sha512-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    }
+  }
+}"#,
+    )
+    .unwrap();
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap(), "--offline"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("deps.insecure-resolution"))
+        .stdout(predicate::str::contains("deps.manifest-drift"));
+}

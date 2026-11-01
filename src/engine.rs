@@ -106,6 +106,8 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
     if !dependencies.is_empty() {
         findings.extend(deps::audit_dependencies(&dependencies, offline));
     }
+    // Lockfile integrity, dependency confusion, and manifest drift.
+    findings.extend(deps::scan_integrity(&files));
 
     // Custom detection rules (user dir + --rules): TOML, Sigma, and YARA.
     let custom_rules = load_all_rules(&rule_paths);

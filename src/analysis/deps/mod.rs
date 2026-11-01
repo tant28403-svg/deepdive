@@ -9,9 +9,11 @@ pub struct Dependency {
     pub source: PathBuf,
 }
 
+pub mod integrity;
 pub mod osv;
 pub mod parsers;
 
+pub use integrity::scan as scan_integrity;
 pub use osv::audit_dependencies;
 pub use parsers::collect_dependencies;
 
