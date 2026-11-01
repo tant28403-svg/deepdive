@@ -117,11 +117,11 @@ impl Cli {
                 out,
                 min_severity: _,
                 offline,
-                deep: _,
+                deep,
                 sandbox,
                 sandbox_cmd,
                 threads: _,
-                rules: _,
+                rules,
                 no_color: _,
             } => {
                 use crate::analysis::file_type;
@@ -146,6 +146,23 @@ impl Cli {
                 if !deps.is_empty() {
                     let dep_findings = crate::analysis::deps::audit_dependencies(&deps, offline);
                     all_findings.extend(dep_findings);
+                }
+
+                // Custom rules.
+                if let Some(rp) = &rules {
+                    let r = crate::analysis::rules::load_rules_file(rp);
+                    for f in &files {
+                        if let Ok(content) = std::fs::read_to_string(f) {
+                            let rf = crate::analysis::rules::scan_with_rules(f, &content, &r);
+                            all_findings.extend(rf);
+                        }
+                    }
+                }
+
+                // Git history (deep mode).
+                if deep {
+                    let hist = crate::analysis::git_history::scan_git_history(&path);
+                    all_findings.extend(hist);
                 }
 
                 // Sandbox (opt-in).

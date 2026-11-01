@@ -16,6 +16,27 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
                 findings.extend(crate::analysis::source::scan(path, content));
                 findings.extend(crate::analysis::secrets::scan(path, content));
                 findings.extend(crate::analysis::obfuscation::scan(path, content));
+                // Automatic deobfuscation: decode and rescan payloads.
+                for decoded in crate::analysis::deobfuscate::deobfuscate_deep(content, 3) {
+                    let mut sub = crate::analysis::source::scan(path, &decoded);
+                    for f in &mut sub {
+                        f.message = format!("[deobfuscated] {}", f.message);
+                        f.tags.push("deobfuscated".to_string());
+                    }
+                    findings.extend(sub);
+                    let mut sub = crate::analysis::secrets::scan(path, &decoded);
+                    for f in &mut sub {
+                        f.message = format!("[deobfuscated] {}", f.message);
+                        f.tags.push("deobfuscated".to_string());
+                    }
+                    findings.extend(sub);
+                    let mut sub = crate::analysis::obfuscation::scan(path, &decoded);
+                    for f in &mut sub {
+                        f.message = format!("[deobfuscated] {}", f.message);
+                        f.tags.push("deobfuscated".to_string());
+                    }
+                    findings.extend(sub);
+                }
             }
         }
         FileType::BinaryPe | FileType::BinaryElf | FileType::BinaryMachO => {
@@ -30,6 +51,22 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
     // Document analysis (PDF, Office, HTML, SVG, Jupyter).
     if let Ok(bytes) = std::fs::read(path) {
         findings.extend(crate::analysis::document::scan(path, &bytes));
+    }
+    // Polyglot carving: scan embedded payloads.
+    if let Ok(bytes) = std::fs::read(path) {
+        findings.extend(crate::analysis::polyglot::scan_carved(path, &bytes));
+    }
+    findings
+}
+
+pub fn scan_bytes(path: &Path, bytes: &[u8]) -> Vec<Finding> {
+    let mut findings = Vec::new();
+    findings.extend(crate::analysis::binary::scan(path, bytes));
+    findings.extend(crate::analysis::document::scan(path, bytes));
+    if let Ok(text) = std::str::from_utf8(bytes) {
+        findings.extend(crate::analysis::source::scan(path, text));
+        findings.extend(crate::analysis::secrets::scan(path, text));
+        findings.extend(crate::analysis::obfuscation::scan(path, text));
     }
     findings
 }
