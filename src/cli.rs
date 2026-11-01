@@ -105,7 +105,7 @@ pub enum CacheAction {
 }
 
 impl Cli {
-    pub async fn run(self) -> Result<()> {
+    pub fn run(self) -> Result<()> {
         match self.command {
             Commands::Scan {
                 path,
@@ -113,7 +113,7 @@ impl Cli {
                 format,
                 out,
                 min_severity: _,
-                offline: _,
+                offline,
                 deep: _,
                 sandbox: _,
                 threads: _,
@@ -135,6 +135,13 @@ impl Cli {
                     *counts.entry(ft.as_str()).or_insert(0) += 1;
                     let findings = scan::read_and_scan(f);
                     all_findings.extend(findings);
+                }
+
+                // Dependency audit.
+                let deps = crate::analysis::deps::collect_dependencies(&files);
+                if !deps.is_empty() {
+                    let dep_findings = crate::analysis::deps::audit_dependencies(&deps, offline);
+                    all_findings.extend(dep_findings);
                 }
 
                 let score = risk::score(&all_findings);
@@ -231,6 +238,10 @@ impl Cli {
                     let ft = file_type::detect(f);
                     *counts.entry(ft.as_str()).or_insert(0) += 1;
                     all_findings.extend(scan::read_and_scan(f));
+                }
+                let deps = crate::analysis::deps::collect_dependencies(&files);
+                if !deps.is_empty() {
+                    all_findings.extend(crate::analysis::deps::audit_dependencies(&deps, false));
                 }
                 let score = risk::score(&all_findings);
                 let v = risk::verdict(score, &all_findings);
