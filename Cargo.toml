@@ -2,7 +2,7 @@
 name = "deepdive"
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.75"
+rust-version = "1.93"
 description = "Reverse-engineer and safety-check repositories and files before running them."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/tant28403-svg/deepdive"
@@ -21,6 +21,7 @@ tokio = { version = "1", features = ["full"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_yaml = "0.9"
 toml = "0.8"
 
 # File walking
@@ -75,10 +76,10 @@ thiserror = "1"
 
 # XDG dirs
 directories = "5"
-tree-sitter = "0.21"
-tree-sitter-javascript = "0.21"
-tree-sitter-typescript = "0.21"
-tree-sitter-python = "0.21"
+tree-sitter = "0.25"
+tree-sitter-javascript = "0.25"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.25"
 
 [dev-dependencies]
 assert_cmd = "2"
@@ -89,10 +90,26 @@ tempfile = "3"
 default = ["git-backend-gix"]
 git-backend-gix = []
 git-backend-git2 = ["dep:git2"]
+yara = ["dep:yara-x"]
 
 [dependencies.git2]
 version = "0.19"
 optional = true
+
+[dependencies.yara-x]
+version = "1.21"
+optional = true
+default-features = false
+features = [
+    "pe-module",
+    "elf-module",
+    "macho-module",
+    "hash-module",
+    "math-module",
+    "string-module",
+    "lnk-module",
+    "time-module",
+]
 
 [[bin]]
 name = "deepdive"

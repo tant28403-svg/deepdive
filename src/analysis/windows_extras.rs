@@ -69,8 +69,8 @@ fn ascii_strings(bytes: &[u8]) -> Vec<String> {
 fn utf16_strings(bytes: &[u8]) -> Vec<String> {
     let mut out = Vec::new();
     let mut current = String::new();
-    for pair in bytes.chunks_exact(2) {
-        let unit = u16::from_le_bytes([pair[0], pair[1]]);
+    for pair in bytes.as_chunks::<2>().0 {
+        let unit = u16::from_le_bytes(*pair);
         if let Some(c) = char::from_u32(unit as u32) {
             if !c.is_control() && !c.is_whitespace() {
                 current.push(c);

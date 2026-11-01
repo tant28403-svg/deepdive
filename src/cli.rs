@@ -241,6 +241,8 @@ fn clone_repo(
 
 fn run_rules(action: RulesAction) -> Result<()> {
     use crate::analysis::rules;
+    use crate::analysis::sigma;
+    use crate::analysis::yara;
     use crate::config;
 
     match action {
@@ -249,19 +251,58 @@ fn run_rules(action: RulesAction) -> Result<()> {
             for id in rules::builtin_rule_ids() {
                 println!("  {}", id);
             }
+            println!();
+            println!(
+                "YARA support: {}",
+                if yara::YaraRules::available() {
+                    "enabled"
+                } else {
+                    "not compiled (rebuild with --features yara)"
+                }
+            );
             if let Some(dir) = config::rules_dir() {
                 println!();
                 println!("User rules directory: {}", dir.display());
                 if let Ok(entries) = std::fs::read_dir(&dir) {
                     for entry in entries.flatten() {
                         let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-                            continue;
-                        }
-                        let custom = rules::load_rules_file(&path);
-                        println!("  {} ({} rule(s))", path.display(), custom.len());
-                        for rule in &custom {
-                            println!("    - {}", rule.name);
+                        let ext = path
+                            .extension()
+                            .and_then(|e| e.to_str())
+                            .unwrap_or("")
+                            .to_lowercase();
+                        match ext.as_str() {
+                            "toml" => {
+                                let custom = rules::load_rules_file(&path);
+                                println!("  {} ({} TOML rule(s))", path.display(), custom.len());
+                                for rule in &custom {
+                                    println!("    - {}", rule.name);
+                                }
+                            }
+                            "yml" | "yaml" => match sigma::load_file(&path) {
+                                Ok(custom) => {
+                                    println!(
+                                        "  {} ({} Sigma rule(s))",
+                                        path.display(),
+                                        custom.len()
+                                    );
+                                    for rule in &custom {
+                                        println!("    - {}", rule.title);
+                                    }
+                                }
+                                Err(err) => println!("  {} (invalid: {})", path.display(), err),
+                            },
+                            "yar" | "yara" => {
+                                match yara::YaraRules::compile(std::slice::from_ref(&path)) {
+                                    Ok(compiled) => println!(
+                                        "  {} ({} YARA rule(s))",
+                                        path.display(),
+                                        compiled.len()
+                                    ),
+                                    Err(err) => println!("  {} (invalid: {})", path.display(), err),
+                                }
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -272,31 +313,71 @@ fn run_rules(action: RulesAction) -> Result<()> {
             if !file.is_file() {
                 anyhow::bail!("rules file not found: {}", file.display());
             }
-            let parsed = rules::load_rules_file(&file);
-            if parsed.is_empty() {
-                anyhow::bail!(
-                    "no rules parsed from {} (expected [[rules]] entries or a rule array)",
-                    file.display()
-                );
-            }
-            let errors = rules::validate_rules(&parsed);
-            println!("{}: {} rule(s)", file.display(), parsed.len());
-            for rule in &parsed {
-                println!(
-                    "  {} [{}] {} pattern(s)",
-                    rule.name,
-                    rule.severity,
-                    rule.patterns.len()
-                );
-            }
-            if errors.is_empty() {
-                println!("OK: all patterns compile");
-                Ok(())
-            } else {
-                for error in &errors {
-                    eprintln!("ERROR: {}", error);
+            let ext = file
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            match ext.as_str() {
+                "yar" | "yara" => {
+                    if !yara::YaraRules::available() {
+                        anyhow::bail!(
+                            "YARA support is not compiled in; rebuild with --features yara"
+                        );
+                    }
+                    let compiled = yara::YaraRules::compile(std::slice::from_ref(&file))?;
+                    if compiled.is_empty() {
+                        anyhow::bail!("no YARA rules parsed from {}", file.display());
+                    }
+                    println!("{}: {} YARA rule(s)", file.display(), compiled.len());
+                    println!("OK: YARA rules compile");
+                    Ok(())
                 }
-                std::process::exit(1);
+                "yml" | "yaml" => {
+                    let parsed = sigma::load_file(&file)?;
+                    if parsed.is_empty() {
+                        anyhow::bail!("no Sigma rules parsed from {}", file.display());
+                    }
+                    println!("{}: {} Sigma rule(s)", file.display(), parsed.len());
+                    for rule in &parsed {
+                        println!(
+                            "  {} [{}] condition: {}",
+                            rule.title,
+                            rule.level.as_str(),
+                            rule.condition
+                        );
+                    }
+                    println!("OK: Sigma rules parse");
+                    Ok(())
+                }
+                _ => {
+                    let parsed = rules::load_rules_file(&file);
+                    if parsed.is_empty() {
+                        anyhow::bail!(
+                            "no rules parsed from {} (expected [[rules]] entries or a rule array)",
+                            file.display()
+                        );
+                    }
+                    let errors = rules::validate_rules(&parsed);
+                    println!("{}: {} TOML rule(s)", file.display(), parsed.len());
+                    for rule in &parsed {
+                        println!(
+                            "  {} [{}] {} pattern(s)",
+                            rule.name,
+                            rule.severity,
+                            rule.patterns.len()
+                        );
+                    }
+                    if errors.is_empty() {
+                        println!("OK: all patterns compile");
+                        Ok(())
+                    } else {
+                        for error in &errors {
+                            eprintln!("ERROR: {}", error);
+                        }
+                        std::process::exit(1);
+                    }
+                }
             }
         }
     }

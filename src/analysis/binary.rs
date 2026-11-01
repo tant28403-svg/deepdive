@@ -641,7 +641,7 @@ fn looks_like_ipv4(s: &str) -> bool {
 
 fn is_base64_blob(s: &str) -> bool {
     s.len() >= 32
-        && s.len() % 4 == 0
+        && s.len().is_multiple_of(4)
         && s.chars()
             .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
         && (s.ends_with('=') || s.chars().any(|c| c.is_ascii_uppercase()))

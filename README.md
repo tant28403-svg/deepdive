@@ -6,7 +6,35 @@ deepdive is a cross-platform (Windows + Linux) CLI tool that combines static ana
 
 ## Status
 
-Early development — Stage 1 (scaffold). See the plan in `~/.opencode/plan/deepdive-plan.md`.
+v1.0.0 is released. Post-1.0 work is landing incrementally:
+
+- `v1.1` — recursive archives and symlink escapes, expanded file types, Windows artifacts (ADS/reparse points, `.lnk`, MSI, scheduled tasks, OLE macros), deeper binary triage.
+- `v1.2` — YARA and Sigma rules, SBOM export, lockfile integrity, dependency confusion, taint-aware AST.
+- Deferred to `v2` — syscall tracing, network capture, memory dumps, anti-analysis multi-run, disassembly/CFG, .NET/Java/Android/WASM, ML/ONNX, firmware.
+
+See the plan in `~/.opencode/plan/deepdive-plan.md`.
+
+## Rules
+
+Built-in rules are listed with `deepdive rules list`. Custom rules can be dropped in the
+user rules directory (TOML, Sigma YAML, or YARA) or passed per scan with `--rules`:
+
+```bash
+deepdive scan ./repo --rules ./rules/custom.toml
+deepdive scan ./repo --rules ./rules/suspicious.yml   # Sigma subset
+deepdive rules test ./rules/custom.yar
+```
+
+YARA support is an optional build feature (it pulls in a WebAssembly runtime). Build it with:
+
+```bash
+cargo build --release --features yara   # requires Rust 1.95+
+```
+
+Sigma support is a static subset: detection selectors are evaluated against file lines,
+including `and`/`or`/`not`, `N of`, `all of`, wildcards, and common modifiers
+(`contains`, `startswith`, `endswith`, `re`, `all`). It is intended for dropped
+command-line/script artifacts, not event-log correlation.
 
 ## Install
 

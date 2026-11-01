@@ -17,10 +17,10 @@ pub fn scan_ast(path: &Path, content: &str) -> Vec<Finding> {
 
 fn scan_js(path: &Path, content: &str, typescript: bool) -> Vec<Finding> {
     let mut parser = tree_sitter::Parser::new();
-    let lang = if typescript {
-        tree_sitter_typescript::language_typescript()
+    let lang: tree_sitter::Language = if typescript {
+        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()
     } else {
-        tree_sitter_javascript::language()
+        tree_sitter_javascript::LANGUAGE.into()
     };
     if parser.set_language(&lang).is_err() {
         return Vec::new();
@@ -102,7 +102,7 @@ fn walk_js(node: tree_sitter::Node, content: &str, path_str: &str, out: &mut Vec
 
 fn scan_python(path: &Path, content: &str) -> Vec<Finding> {
     let mut parser = tree_sitter::Parser::new();
-    let lang = tree_sitter_python::language();
+    let lang: tree_sitter::Language = tree_sitter_python::LANGUAGE.into();
     if parser.set_language(&lang).is_err() {
         return Vec::new();
     }

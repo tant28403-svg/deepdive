@@ -152,6 +152,89 @@ fn rules_list_shows_builtins() {
 }
 
 #[test]
+fn sigma_rule_matches_scan_output() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("payload.txt"),
+        "prefix CMD_MARKER_XYZ suffix\n",
+    )
+    .unwrap();
+    let rules = dir.path().join("sigma.yml");
+    std::fs::write(
+        &rules,
+        r#"title: Marker command
+id: test-marker
+level: critical
+detection:
+  selection:
+    CommandLine|contains: 'CMD_MARKER_XYZ'
+  condition: selection
+"#,
+    )
+    .unwrap();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--rules",
+            rules.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::contains("sigma.test-marker"))
+        .stdout(predicate::str::contains("VERDICT: UNSAFE"));
+}
+
+#[test]
+fn rules_test_validates_a_sigma_file() {
+    let dir = TempDir::new().unwrap();
+    let rules = dir.path().join("sigma.yml");
+    std::fs::write(
+        &rules,
+        "title: Demo\nlevel: high\ndetection:\n  selection:\n    CommandLine|contains: 'demo'\n  condition: selection\n",
+    )
+    .unwrap();
+    deepdive()
+        .args(["rules", "test", rules.to_str().unwrap()])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("OK: Sigma rules parse"));
+}
+
+#[cfg(feature = "yara")]
+#[test]
+fn yara_rule_matches_scan_output() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("payload.bin"), "xx deepdive-marker xx").unwrap();
+    let rules = dir.path().join("rule.yar");
+    std::fs::write(
+        &rules,
+        r#"rule deepdive_marker {
+  meta:
+    severity = "critical"
+    description = "integration marker"
+  strings:
+    $a = "deepdive-marker"
+  condition:
+    $a
+}
+"#,
+    )
+    .unwrap();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--rules",
+            rules.to_str().unwrap(),
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::contains("yara.deepdive_marker"))
+        .stdout(predicate::str::contains("VERDICT: UNSAFE"));
+}
+
+#[test]
 fn cache_update_and_clear_use_env_override() {
     let dir = TempDir::new().unwrap();
     let cache = dir.path().join("cache");

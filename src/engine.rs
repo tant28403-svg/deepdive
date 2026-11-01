@@ -1,4 +1,6 @@
 use crate::analysis::file_type::FileType;
+use crate::analysis::sigma::{self as sigma_engine, SigmaRule};
+use crate::analysis::yara::YaraRules;
 use crate::analysis::{deps, file_type, git_history, rules as rule_engine, scan, symlinks, walker};
 use crate::config::{self, ProjectConfig};
 use crate::risk;
@@ -103,16 +105,45 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
         findings.extend(deps::audit_dependencies(&dependencies, offline));
     }
 
-    // Custom TOML rules (user dir + --rules).
+    // Custom detection rules (user dir + --rules): TOML, Sigma, and YARA.
     let custom_rules = load_all_rules(&rule_paths);
-    if !custom_rules.is_empty() {
+    if !custom_rules.toml.is_empty() {
         let rule_findings: Vec<Finding> = files
             .par_iter()
             .zip(types.par_iter())
             .filter(|(_, ft)| is_text_type(ft))
             .map(|(file, _)| {
                 let content = scan::read_text(file);
-                rule_engine::scan_with_rules(file, &content, &custom_rules)
+                rule_engine::scan_with_rules(file, &content, &custom_rules.toml)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect();
+        findings.extend(rule_findings);
+    }
+    if !custom_rules.sigma.is_empty() {
+        let rule_findings: Vec<Finding> = files
+            .par_iter()
+            .zip(types.par_iter())
+            .filter(|(_, ft)| is_text_type(ft))
+            .map(|(file, _)| {
+                let content = scan::read_text(file);
+                sigma_engine::scan(file, &content, &custom_rules.sigma)
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .flatten()
+            .collect();
+        findings.extend(rule_findings);
+    }
+    if !custom_rules.yara.is_empty() {
+        let rule_findings: Vec<Finding> = files
+            .par_iter()
+            .filter_map(|file| {
+                std::fs::read(file)
+                    .ok()
+                    .map(|bytes| custom_rules.yara.scan(file, &bytes))
             })
             .collect::<Vec<_>>()
             .into_iter()
@@ -277,27 +308,69 @@ fn is_text_type(ft: &FileType) -> bool {
     )
 }
 
-fn load_all_rules(extra: &[PathBuf]) -> Vec<rule_engine::Rule> {
-    let mut rules = Vec::new();
+struct RuleBundle {
+    toml: Vec<rule_engine::Rule>,
+    sigma: Vec<SigmaRule>,
+    yara: YaraRules,
+}
+
+fn load_all_rules(extra: &[PathBuf]) -> RuleBundle {
+    use std::collections::BTreeSet;
+
+    let mut paths: BTreeSet<PathBuf> = BTreeSet::new();
     if let Some(dir) = config::rules_dir() {
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .map(|e| e.eq_ignore_ascii_case("toml"))
-                    .unwrap_or(false)
-                {
-                    rules.extend(rule_engine::load_rules_file(&path));
-                }
-            }
-        }
+        collect_rule_paths(&dir, &mut paths);
     }
     for path in extra {
-        rules.extend(rule_engine::load_rules_file(path));
+        if path.is_dir() {
+            collect_rule_paths(path, &mut paths);
+        } else {
+            paths.insert(path.clone());
+        }
     }
-    rules
+
+    let mut bundle = RuleBundle {
+        toml: Vec::new(),
+        sigma: Vec::new(),
+        yara: YaraRules::empty(),
+    };
+    let mut yara_paths = Vec::new();
+    for path in paths {
+        let extension = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        match extension.as_str() {
+            "toml" => bundle.toml.extend(rule_engine::load_rules_file(&path)),
+            "yml" | "yaml" => match sigma_engine::load_file(&path) {
+                Ok(rules) => bundle.sigma.extend(rules),
+                Err(err) => eprintln!("warning: {}", err),
+            },
+            "yar" | "yara" => yara_paths.push(path),
+            _ => {}
+        }
+    }
+    match YaraRules::compile(&yara_paths) {
+        Ok(rules) => bundle.yara = rules,
+        Err(err) => eprintln!(
+            "warning: YARA rules disabled after a compile error: {}",
+            err
+        ),
+    }
+    bundle
+}
+
+fn collect_rule_paths(dir: &Path, out: &mut std::collections::BTreeSet<PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_file() {
+            out.insert(path);
+        }
+    }
 }
 
 fn severity_label(severity: Severity, color: bool) -> String {
