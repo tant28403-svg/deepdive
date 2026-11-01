@@ -91,6 +91,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: CacheAction,
     },
+    /// Generate shell completions.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     /// Print version.
     Version,
 }
@@ -264,7 +269,13 @@ impl Cli {
                         c.get(&Severity::Info).unwrap_or(&0),
                     );
                 }
-                Ok(())
+                // Exit code based on verdict.
+                let code = match v {
+                    crate::types::Verdict::Safe => 0,
+                    crate::types::Verdict::Review => 1,
+                    _ => 2,
+                };
+                std::process::exit(code);
             }
             Commands::Fetch {
                 url,
@@ -382,6 +393,12 @@ impl Cli {
             }
             Commands::Cache { .. } => {
                 println!("cache: not yet implemented");
+                Ok(())
+            }
+            Commands::Completions { shell } => {
+                use clap::CommandFactory;
+                let mut cmd = Cli::command();
+                clap_complete::generate(shell, &mut cmd, "deepdive", &mut std::io::stdout());
                 Ok(())
             }
             Commands::Version => {
