@@ -50,6 +50,19 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
                 findings.extend(crate::analysis::archive::scan(path, &bytes));
             }
         }
+        FileType::Bytecode => {
+            // JVM/Android archives are zip containers; .class/.wasm analysis is a v2 item.
+            if let Ok(bytes) = std::fs::read(path) {
+                if bytes.len() >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B {
+                    findings.extend(crate::analysis::archive::scan(path, &bytes));
+                }
+            }
+        }
+        FileType::Package => {
+            if let Ok(bytes) = std::fs::read(path) {
+                findings.extend(crate::analysis::archive::scan(path, &bytes));
+            }
+        }
         _ => {}
     }
     // Build-script / CI / Dockerfile analysis (by filename).
@@ -78,6 +91,68 @@ pub fn scan_bytes(path: &Path, bytes: &[u8]) -> Vec<Finding> {
 }
 
 pub fn read_and_scan(path: &Path) -> Vec<Finding> {
-    let content = std::fs::read_to_string(path).unwrap_or_default();
+    let ft = crate::analysis::file_type::detect(path);
+    let content = match ft {
+        FileType::Source
+        | FileType::Script
+        | FileType::Text
+        | FileType::Config
+        | FileType::Unknown => read_text(path),
+        _ => String::new(),
+    };
     scan_file(path, &content)
+}
+
+/// Decode a text file, handling UTF-16 BOMs in addition to UTF-8.
+pub fn decode_text(bytes: &[u8]) -> String {
+    if bytes.starts_with(&[0xFF, 0xFE]) {
+        return decode_utf16(&bytes[2..], true);
+    }
+    if bytes.starts_with(&[0xFE, 0xFF]) {
+        return decode_utf16(&bytes[2..], false);
+    }
+    match std::str::from_utf8(bytes) {
+        Ok(s) => s.to_string(),
+        Err(_) => String::from_utf8_lossy(bytes).to_string(),
+    }
+}
+
+fn decode_utf16(bytes: &[u8], little_endian: bool) -> String {
+    let units: Vec<u16> = bytes
+        .chunks_exact(2)
+        .map(|c| {
+            if little_endian {
+                u16::from_le_bytes([c[0], c[1]])
+            } else {
+                u16::from_be_bytes([c[0], c[1]])
+            }
+        })
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+pub fn read_text(path: &Path) -> String {
+    match std::fs::read(path) {
+        Ok(bytes) => decode_text(&bytes),
+        Err(_) => String::new(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decodes_utf16_le_with_bom() {
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in "eval(atob('x'))".encode_utf16() {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(decode_text(&bytes), "eval(atob('x'))");
+    }
+
+    #[test]
+    fn passes_through_utf8() {
+        assert_eq!(decode_text(b"hello"), "hello");
+    }
 }

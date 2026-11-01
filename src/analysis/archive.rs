@@ -132,6 +132,31 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
     }
     let mut budget = Budget::new();
     let mut out = Vec::new();
+    if detect_container(bytes).is_none() {
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_lowercase();
+        if matches!(
+            ext.as_str(),
+            "7z" | "rar" | "xz" | "bz2" | "cab" | "iso" | "deb" | "rpm"
+        ) {
+            push(
+                &mut out,
+                path,
+                "archive.unsupported-format",
+                Severity::Low,
+                format!(
+                    "{} archive detected but not extracted (only zip/tar/gzip are supported)",
+                    ext.to_uppercase()
+                ),
+                None,
+                &["archive", "unsupported"],
+            );
+        }
+        return out;
+    }
     scan_container(path, bytes, 0, &mut budget, &mut out);
     if budget.limit_hit {
         push(
