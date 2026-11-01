@@ -172,10 +172,19 @@ impl Cli {
 
                 // Sandbox (opt-in).
                 if sandbox || sandbox_cmd.is_some() {
-                    let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
-                        .unwrap_or_else(|_| "ubuntu:22.04".to_string());
                     let cmd = sandbox_cmd.clone().unwrap_or_else(|| "true".to_string());
-                    match crate::sandbox::docker::run_sandbox(&cmd, &path, &image, 300) {
+                    let result = if crate::sandbox::docker::docker_available() {
+                        let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
+                            .unwrap_or_else(|_| "ubuntu:22.04".to_string());
+                        crate::sandbox::docker::run_sandbox(&cmd, &path, &image, 300)
+                    } else if cfg!(windows) {
+                        crate::sandbox::windows_native::run_native(&cmd, &path, 300)
+                    } else {
+                        Err(anyhow::anyhow!(
+                            "no sandbox available (docker not installed)"
+                        ))
+                    };
+                    match result {
                         Ok(report) => {
                             all_findings
                                 .extend(crate::sandbox::docker::behavioral_findings(&report));
@@ -359,9 +368,16 @@ impl Cli {
                 }
 
                 if let Some(cmd) = &sandbox_cmd {
-                    let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
-                        .unwrap_or_else(|_| "ubuntu:22.04".to_string());
-                    match crate::sandbox::docker::run_sandbox(cmd, &path, &image, 300) {
+                    let result = if crate::sandbox::docker::docker_available() {
+                        let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
+                            .unwrap_or_else(|_| "ubuntu:22.04".to_string());
+                        crate::sandbox::docker::run_sandbox(cmd, &path, &image, 300)
+                    } else if cfg!(windows) {
+                        crate::sandbox::windows_native::run_native(cmd, &path, 300)
+                    } else {
+                        Err(anyhow::anyhow!("no sandbox available"))
+                    };
+                    match result {
                         Ok(report) => {
                             all_findings
                                 .extend(crate::sandbox::docker::behavioral_findings(&report));

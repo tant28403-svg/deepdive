@@ -97,6 +97,9 @@ optional = true
 name = "deepdive"
 path = "src/main.rs"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = ["Win32_Foundation", "Win32_System_JobObjects", "Win32_Security", "Win32_System_Threading"] }
+
 [profile.release]
 lto = true
 codegen-units = 1
