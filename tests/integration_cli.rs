@@ -253,3 +253,76 @@ fn cache_update_and_clear_use_env_override() {
         .stdout(predicate::str::contains("cleared"));
     assert!(!cache.exists());
 }
+
+fn sbom_fixture() -> TempDir {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("package-lock.json"),
+        r#"{
+  "name": "demo",
+  "lockfileVersion": 2,
+  "packages": {
+    "": { "name": "demo", "version": "1.0.0" },
+    "node_modules/lodash": { "version": "4.17.21" }
+  }
+}"#,
+    )
+    .unwrap();
+    dir
+}
+
+#[test]
+fn sbom_cyclonedx_outputs_json() {
+    let dir = sbom_fixture();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--offline",
+            "--sbom",
+            "cyclonedx",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"bomFormat\": \"CycloneDX\""))
+        .stdout(predicate::str::contains("\"specVersion\": \"1.5\""))
+        .stdout(predicate::str::contains("pkg:npm/lodash@4.17.21"));
+}
+
+#[test]
+fn sbom_spdx_outputs_json() {
+    let dir = sbom_fixture();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--offline",
+            "--sbom",
+            "spdx",
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"spdxVersion\": \"SPDX-2.3\""))
+        .stdout(predicate::str::contains("pkg:npm/lodash@4.17.21"));
+}
+
+#[test]
+fn sbom_writes_to_out_file() {
+    let dir = sbom_fixture();
+    let out = dir.path().join("sbom.json");
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--offline",
+            "--sbom",
+            "cyclonedx",
+            "--out",
+            out.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+    let content = std::fs::read_to_string(&out).unwrap();
+    assert!(content.contains("\"bomFormat\": \"CycloneDX\""));
+    assert!(content.contains("lodash"));
+}

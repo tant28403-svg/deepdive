@@ -25,6 +25,7 @@ pub struct Options {
     pub rules: Vec<PathBuf>,
     pub fail_on: Option<String>,
     pub no_color: bool,
+    pub sbom: Option<String>,
 }
 
 impl Default for Options {
@@ -42,6 +43,7 @@ impl Default for Options {
             rules: Vec::new(),
             fail_on: None,
             no_color: false,
+            sbom: None,
         }
     }
 }
@@ -208,6 +210,14 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
     reported.sort_by_key(|a| std::cmp::Reverse(a.severity));
 
     let color = !opts.no_color && std::io::stdout().is_terminal();
+    if let Some(sbom_format) = &opts.sbom {
+        let content = match sbom_format.to_lowercase().as_str() {
+            "spdx" => crate::reporting::sbom::spdx(&dependencies, path),
+            _ => crate::reporting::sbom::cyclonedx(&dependencies, path),
+        };
+        write_output(&opts.out, &content)?;
+        return Ok(exit_code(opts, verdict, &findings));
+    }
     match opts.format.to_lowercase().as_str() {
         "json" => {
             let content = serde_json::to_string_pretty(&serde_json::json!({

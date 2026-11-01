@@ -53,6 +53,9 @@ pub struct ScanArgs {
     /// Disable colored output.
     #[arg(long)]
     pub no_color: bool,
+    /// Emit a Software Bill of Materials instead of a scan report.
+    #[arg(long, value_name = "FORMAT", value_parser = ["cyclonedx", "spdx"])]
+    pub sbom: Option<String>,
 }
 
 impl From<&ScanArgs> for engine::Options {
@@ -70,6 +73,7 @@ impl From<&ScanArgs> for engine::Options {
             rules: args.rules.iter().cloned().collect(),
             fail_on: args.fail_on.clone(),
             no_color: args.no_color,
+            sbom: args.sbom.clone(),
         }
     }
 }

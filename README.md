@@ -70,6 +70,8 @@ docker run --rm -v "$PWD:/work" ghcr.io/tant28403-svg/deepdive scan /work
 ```bash
 deepdive scan ./suspicious-repo
 deepdive scan ./payload.exe --format json --out report.json
+deepdive scan ./repo --offline --sbom cyclonedx --out sbom.json
+deepdive scan ./repo --offline --sbom spdx
 deepdive fetch https://github.com/user/repo --keep ./repo
 deepdive audit https://github.com/user/repo --sandbox --fail-on high
 ```
