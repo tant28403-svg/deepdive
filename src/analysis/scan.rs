@@ -72,6 +72,8 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
     }
     // Build-script / CI / Dockerfile analysis (by filename).
     findings.extend(crate::analysis::build::scan(path, content));
+    // Configuration, manifest, CI, and infrastructure analysis.
+    findings.extend(crate::analysis::config::scan(path, content));
     // Document analysis (PDF, Office, HTML, SVG, Jupyter).
     if let Ok(bytes) = std::fs::read(path) {
         findings.extend(crate::analysis::document::scan(path, &bytes));
@@ -91,6 +93,7 @@ pub fn scan_bytes(path: &Path, bytes: &[u8]) -> Vec<Finding> {
         findings.extend(crate::analysis::source::scan(path, text));
         findings.extend(crate::analysis::secrets::scan(path, text));
         findings.extend(crate::analysis::obfuscation::scan(path, text));
+        findings.extend(crate::analysis::config::scan(path, text));
     }
     findings
 }
