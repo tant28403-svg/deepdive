@@ -41,7 +41,19 @@ pub struct Finding {
     pub tags: Vec<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SandboxReport {
+    pub command: String,
+    pub image: String,
+    pub exit_code: Option<i32>,
+    pub stdout: String,
+    pub stderr: String,
+    pub duration_ms: u64,
+    pub files_created: Vec<String>,
+    pub files_modified: Vec<String>,
+    pub files_deleted: Vec<String>,
+    pub network_indicators: Vec<String>,
+}
 pub enum Verdict {
     Safe,
     Review,

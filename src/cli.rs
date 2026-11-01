@@ -37,6 +37,9 @@ pub enum Commands {
         /// Run in sandbox after static scan.
         #[arg(long)]
         sandbox: bool,
+        /// Command to run in sandbox.
+        #[arg(long)]
+        sandbox_cmd: Option<String>,
         /// Skip files larger than this (MB).
         #[arg(long, default_value = "100")]
         max_size: u64,
@@ -115,7 +118,8 @@ impl Cli {
                 min_severity: _,
                 offline,
                 deep: _,
-                sandbox: _,
+                sandbox,
+                sandbox_cmd,
                 threads: _,
                 rules: _,
                 no_color: _,
@@ -142,6 +146,38 @@ impl Cli {
                 if !deps.is_empty() {
                     let dep_findings = crate::analysis::deps::audit_dependencies(&deps, offline);
                     all_findings.extend(dep_findings);
+                }
+
+                // Sandbox (opt-in).
+                if sandbox || sandbox_cmd.is_some() {
+                    let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
+                        .unwrap_or_else(|_| "ubuntu:22.04".to_string());
+                    let cmd = sandbox_cmd.clone().unwrap_or_else(|| "true".to_string());
+                    match crate::sandbox::docker::run_sandbox(&cmd, &path, &image, 300) {
+                        Ok(report) => {
+                            all_findings
+                                .extend(crate::sandbox::docker::behavioral_findings(&report));
+                            println!();
+                            println!("[sandbox] image: {}", report.image);
+                            println!("[sandbox] exit code: {:?}", report.exit_code);
+                            println!("[sandbox] duration: {} ms", report.duration_ms);
+                            println!("[sandbox] files created: {}", report.files_created.len());
+                            println!("[sandbox] files modified: {}", report.files_modified.len());
+                            println!(
+                                "[sandbox] network indicators: {}",
+                                report.network_indicators.len()
+                            );
+                            if !report.stdout.is_empty() {
+                                println!("[sandbox stdout]\n{}", report.stdout);
+                            }
+                            if !report.stderr.is_empty() {
+                                println!("[sandbox stderr]\n{}", report.stderr);
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("[sandbox] failed: {}", e);
+                        }
+                    }
                 }
 
                 let score = risk::score(&all_findings);
@@ -262,8 +298,65 @@ impl Cli {
                 let _ = subdir;
                 Ok(())
             }
-            Commands::Audit { .. } => {
-                println!("audit: not yet implemented");
+            Commands::Audit {
+                target,
+                sandbox_cmd,
+                fail_on: _,
+            } => {
+                use crate::analysis::file_type;
+                use crate::analysis::scan;
+                use crate::analysis::walker;
+                use crate::risk;
+                use crate::types::Finding;
+                use std::collections::BTreeMap;
+                use std::path::PathBuf;
+
+                let path = PathBuf::from(&target);
+                if !path.exists() {
+                    println!("audit: target not found locally: {}", target);
+                    println!("Hint: use 'deepdive fetch <url>' first, or pass a local path.");
+                    return Ok(());
+                }
+                let files = walker::walk_files(&path, 100);
+                let mut all_findings: Vec<Finding> = Vec::new();
+                let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+                for f in &files {
+                    let ft = file_type::detect(f);
+                    *counts.entry(ft.as_str()).or_insert(0) += 1;
+                    all_findings.extend(scan::read_and_scan(f));
+                }
+                let deps = crate::analysis::deps::collect_dependencies(&files);
+                if !deps.is_empty() {
+                    all_findings.extend(crate::analysis::deps::audit_dependencies(&deps, false));
+                }
+
+                if let Some(cmd) = &sandbox_cmd {
+                    let image = std::env::var("DEEPDIVE_SANDBOX_IMAGE")
+                        .unwrap_or_else(|_| "ubuntu:22.04".to_string());
+                    match crate::sandbox::docker::run_sandbox(cmd, &path, &image, 300) {
+                        Ok(report) => {
+                            all_findings
+                                .extend(crate::sandbox::docker::behavioral_findings(&report));
+                            println!("[sandbox] exit code: {:?}", report.exit_code);
+                            println!("[sandbox] files created: {}", report.files_created.len());
+                            println!("[sandbox] files modified: {}", report.files_modified.len());
+                            if !report.network_indicators.is_empty() {
+                                println!(
+                                    "[sandbox] network: {}",
+                                    report.network_indicators.join(", ")
+                                );
+                            }
+                        }
+                        Err(e) => eprintln!("[sandbox] failed: {}", e),
+                    }
+                }
+
+                let score = risk::score(&all_findings);
+                let v = risk::verdict(score, &all_findings);
+                println!("deepdive audit: {}", path.display());
+                println!("files scanned: {}", files.len());
+                println!("VERDICT: {}  (risk score {}/100)", v.as_str(), score);
+                println!("Summary: {} findings", all_findings.len());
                 Ok(())
             }
             Commands::Rules { .. } => {
