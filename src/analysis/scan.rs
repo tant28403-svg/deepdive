@@ -16,6 +16,7 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
                 findings.extend(crate::analysis::source::scan(path, content));
                 findings.extend(crate::analysis::secrets::scan(path, content));
                 findings.extend(crate::analysis::obfuscation::scan(path, content));
+                findings.extend(crate::analysis::ast::scan_ast(path, content));
                 // Automatic deobfuscation: decode and rescan payloads.
                 for decoded in crate::analysis::deobfuscate::deobfuscate_deep(content, 3) {
                     let mut sub = crate::analysis::source::scan(path, &decoded);

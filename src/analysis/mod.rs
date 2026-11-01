@@ -1,3 +1,4 @@
+pub mod ast;
 pub mod binary;
 pub mod build;
 pub mod config;
