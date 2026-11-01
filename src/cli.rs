@@ -111,7 +111,7 @@ impl Cli {
                 path,
                 max_size,
                 format,
-                out: _,
+                out,
                 min_severity: _,
                 offline: _,
                 deep: _,
@@ -121,25 +121,77 @@ impl Cli {
                 no_color: _,
             } => {
                 use crate::analysis::file_type;
+                use crate::analysis::scan;
                 use crate::analysis::walker;
+                use crate::risk;
+                use crate::types::{Finding, Severity};
                 use std::collections::BTreeMap;
 
                 let files = walker::walk_files(&path, max_size);
+                let mut all_findings: Vec<Finding> = Vec::new();
                 let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
                 for f in &files {
                     let ft = file_type::detect(f);
                     *counts.entry(ft.as_str()).or_insert(0) += 1;
+                    let findings = scan::read_and_scan(f);
+                    all_findings.extend(findings);
                 }
 
-                println!("deepdive scan: {}", path.display());
-                println!("files scanned: {}", files.len());
-                for (k, v) in &counts {
-                    println!("  {:<12} {}", k, v);
-                }
+                let score = risk::score(&all_findings);
+                let v = risk::verdict(score, &all_findings);
 
                 if format == "json" {
-                    // Placeholder: JSON report in later stage.
-                    println!("(json output not yet implemented)");
+                    let json = serde_json::to_string_pretty(&serde_json::json!({
+                        "files_scanned": files.len(),
+                        "risk_score": score,
+                        "verdict": v.as_str(),
+                        "findings": all_findings,
+                    }))?;
+                    if let Some(o) = out {
+                        std::fs::write(o, json)?;
+                    } else {
+                        println!("{}", json);
+                    }
+                } else {
+                    println!("deepdive scan: {}", path.display());
+                    println!("files scanned: {}", files.len());
+                    for (k, vv) in &counts {
+                        println!("  {:<12} {}", k, vv);
+                    }
+                    println!();
+                    println!("VERDICT: {}  (risk score {}/100)", v.as_str(), score);
+                    println!();
+                    let mut sorted = all_findings.clone();
+                    sorted.sort_by_key(|a| std::cmp::Reverse(a.severity));
+                    for f in &sorted {
+                        println!(
+                            "[{}] {} - {}",
+                            f.severity.as_str().to_uppercase(),
+                            f.rule,
+                            f.location.path
+                        );
+                        if let Some(line) = f.location.line {
+                            println!("  line {}: {}", line, f.message);
+                        } else {
+                            println!("  {}", f.message);
+                        }
+                        if let Some(snip) = &f.snippet {
+                            println!("  > {}", snip);
+                        }
+                    }
+                    println!();
+                    let mut c = BTreeMap::new();
+                    for f in &all_findings {
+                        *c.entry(f.severity).or_insert(0usize) += 1;
+                    }
+                    println!(
+                        "Summary: critical={}, high={}, medium={}, low={}, info={}",
+                        c.get(&Severity::Critical).unwrap_or(&0),
+                        c.get(&Severity::High).unwrap_or(&0),
+                        c.get(&Severity::Medium).unwrap_or(&0),
+                        c.get(&Severity::Low).unwrap_or(&0),
+                        c.get(&Severity::Info).unwrap_or(&0),
+                    );
                 }
                 Ok(())
             }

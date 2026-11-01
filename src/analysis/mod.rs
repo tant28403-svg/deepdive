@@ -6,6 +6,7 @@ pub mod file_type;
 pub mod obfuscation;
 pub mod polyglot;
 pub mod router;
+pub mod scan;
 pub mod secrets;
 pub mod source;
 pub mod symlinks;
