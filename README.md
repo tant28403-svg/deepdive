@@ -1,166 +1,104 @@
-# deepdive
+# deepdive v2.0.0
 
-Reverse-engineer and safety-check repositories and files **before** you run or clone them.
+Scan repos and files **before** you run or clone them.
 
-deepdive is a cross-platform (Windows + Linux) CLI tool that combines static analysis, dependency auditing, binary triage, and opt-in sandboxed dynamic execution to produce a risk score and verdict (`SAFE` / `REVIEW` / `UNSAFE` / `BLOCK`).
+- Static analysis (magic bytes, AST, secrets, YARA, Sigma, deobfuscation)
+- Binary triage (PE/ELF/Mach-O, strings, imphash, embedded payloads carves)
+- Dependency audit (OSV, lockfile integrity, typosquatting, manifest drift)
+- Sandbox (opt-in): Docker or native isolation, process/network/registry/memory telemetry
+- Deep mode (`--deep`): git history + SBOM export + baseline comparison
+- Optional analyzers: Java, WASM, Android DEX, .NET metadata, disassembly (`--features disasm`)
 
-## Status
-
-v2.0.0 is released. Work landed incrementally:
-
-- `v1.1` — recursive archives and symlink escapes, expanded file types, Windows artifacts (ADS/reparse points, `.lnk`, MSI, scheduled tasks, OLE macros), deeper binary triage.
-- `v1.2` — YARA and Sigma rules, SBOM export, lockfile integrity, dependency confusion, taint-aware AST.
-- `v2.0` — sandbox foundation (typed policy/backends, structured telemetry in the JSON report,
-  enforced timeouts, `deepdive sandbox selftest`), network capture (HTTP/CONNECT proxy, fake DNS,
-  beacon/DGA analysis), Windows process monitor with registry diffs and executable memory dumps,
-  disassembly heuristics (`disasm`), Java/WASM/Android/.NET analyzers, baseline/regression mode,
-  cached URLhaus intel matching, and firmware image carving.
-- Still open — Windows AppContainer/restricted-token confinement and ETW syscall telemetry,
-  validating the `native-sandbox` Linux backend as the default, anti-analysis multi-run,
-  the ONNX classifier, and the plugin system. Tracked in the plan's status appendix.
-
-See the plan in `~/.opencode/plan/deepdive-plan.md`.
-
-## Rules
-
-Built-in rules are listed with `deepdive rules list`. Custom rules can be dropped in the
-user rules directory (TOML, Sigma YAML, or YARA) or passed per scan with `--rules`:
+## How it works
 
 ```bash
-deepdive scan ./repo --rules ./rules/custom.toml
-deepdive scan ./repo --rules ./rules/suspicious.yml   # Sigma subset
-deepdive rules test ./rules/custom.yar
+deepdive scan .                  # quick static check
+deepdive scan . --deep           # + git history + dependencies
+deepdive audit ./repo            # deep + optional sandbox
+deepdive fetch https://github.com/user/repo --sandbox --deep
 ```
 
-YARA support is an optional build feature (it pulls in a WebAssembly runtime). Build it with:
+The scan reads files by magic bytes (not just extensions), routes them to module
+analyzers, scores findings (0-100), and prints a verdict (`SAFE` / `REVIEW` /
+`UNSAFE` / `BLOCK`). Sandbox output is included in JSON (`"sandbox": {...}`).
+
+## Key flags
+
+| Flag | Purpose |
+|---|---|
+| `--format text\|json\|sarif` | Report format |
+| `--out file` | Write instead of stdout |
+| `--deep` | Git history + dependency audit |
+| `--sandbox` | Run target in a sandbox |
+| `--sandbox-cmd "..."` | Your command (never invented by the tool) |
+| `--sandbox-backend auto\|native\|docker\|none` | Which isolation to use |
+| `--sandbox-policy strict\|network-capture\|permissive` | Isolation strictness |
+| `--offline` | Skip network (use cached OSV/intel) |
+| `--rules file.toml\|.yml\|.yar` | Custom rules |
+| `--min-severity info` | Hidden from output only; verdict uses all |
+| `--fail-on high` | Exit 2 if finding reaches this |
+| `--baseline prev.json --regression` | Compare to prior report; exit 2 on new high/critical |
+| `--intelligence` (future) / `--intel` (current) | Match URLs/hosts to cached threat feed |
+
+## Sandbox (v2)
+
+The sandbox backend picks the best available isolation:
+
+- `auto`: Docker when installed, else native (Linux namespaces / Windows Job Objects)
+- `native`: Linux `unshare` + seccomp + cgroup v2; Windows restricted token / AppContainer (stage 19 partial: job limits + registry + memory dumps work; full AppContainer/ETW not yet)
+- `docker`: isolated container (`--network none`, `--read-only`, `--tmpfs /tmp` when `strict`)
+
+When `network-capture`, a local proxy logs all HTTP/CONNECT and a fake DNS answers
+`NXDOMAIN`; captured events feed `sandbox.network.*` findings (DGA, beacon, raw IP,
+uncommon port, tunnel). The tool never MITMs TLS.
+
+Self-check before trusting native isolation:
 
 ```bash
-cargo build --release --features yara   # requires Rust 1.95+
+deepdive sandbox selftest --backend native --policy strict
 ```
-
-Sigma support is a static subset: detection selectors are evaluated against file lines,
-including `and`/`or`/`not`, `N of`, `all of`, wildcards, and common modifiers
-(`contains`, `startswith`, `endswith`, `re`, `all`). It is intended for dropped
-command-line/script artifacts, not event-log correlation.
-
-## Disassembly
-
-Build with `cargo build --release --features disasm` to decode PE/ELF executable sections
-with iced-x86 and flag indirect control flow (dynamic API resolution, obfuscation) and
-anti-analysis instructions (`disasm.anti-analysis`, `disasm.indirect-control-flow`).
-
-## Managed runtimes
-
-Optional analyzers, off by default:
-
-- `--features java` — scans `.class` constant pools and every `.class` inside JAR/WAR/APK
-  archives for process execution, JNDI, deserialization, and remote class-loading references.
-- `--features wasm` — flags WASI imports that grant filesystem or network access and
-  dangerous `env` host functions.
-- `--features android` — scans `classes*.dex` string tables in APKs for process execution,
-  dynamic code loading, SMS, reflection, and package-install APIs.
-- `--features dotnet` — reads the CLI `#Strings` heap from managed assemblies and flags
-  runtime assembly loading, P/Invoke, process start, downloads, registry access, and
-  obfuscator markers.
-
-## Regression mode and threat intel
-
-```bash
-deepdive scan ./repo --format json --out baseline.json
-deepdive scan ./repo --baseline baseline.json --regression
-deepdive cache update          # refresh the cached URLhaus feed
-deepdive scan ./repo --intel   # match URLs/hosts in text files against the feed
-```
-
-Baseline comparison fingerprints findings by rule, path, and line, reports new and resolved
-findings, and exits 2 on new high/critical findings in `--regression` mode. Intel matching
-emits `intel.url-match` for URLs, hostnames, and raw IPs found in the cached feed.
-
-## Dependency checks
-
-deepdive reads npm, pnpm, Yarn, Cargo, pip, Go, and Bundler metadata. In addition to
-OSV advisories and typosquatting, it flags:
-
-- lockfile entries resolved over plain HTTP, unpinned git references, missing or
-  malformed integrity hashes, and outdated lockfile versions;
-- private-scope npm packages that resolve from the public registry, `--extra-index-url`
-  in `requirements.txt`, and private registries configured without `always-auth`;
-- manifest drift between `package.json`/`Pipfile`/`go.mod` and their lockfiles.
-
-These checks are static and offline. Upstream hash verification against registry APIs is
-planned for a later release.
-
-## Taint analysis
-
-For JavaScript, TypeScript, and Python, deepdive performs a lightweight taint pass over
-the syntax tree. It marks common user-controlled sources (`process.argv`, `process.env`,
-`req.query`, `location.search`, `sys.argv`, `os.environ`, `request.form`, `input()`, ...)
-and reports when that data reaches a sink such as `eval`, `Function`, `child_process`,
-`os.system`, `subprocess`, `pickle.loads`, `yaml.load`, or SQL `.execute`/`.query`.
-Taint propagates through simple assignments. This is intentionally conservative, not a
-full data-flow engine.
-
-## Sandbox
-
-Dynamic execution is opt-in and deepdive never invents a command:
-
-```bash
-deepdive scan ./repo --sandbox --sandbox-cmd "npm install && npm test"
-deepdive scan ./repo --sandbox --sandbox-backend native --sandbox-policy strict
-deepdive sandbox selftest --backend auto
-```
-
-Backends: `auto` (Docker when available, otherwise native), `native` (bubblewrap/firejail on
-Linux, Job Objects on Windows), `docker`, `none`. The `network-capture` policy starts a local
-HTTP/CONNECT proxy and fake DNS resolver, points the sandboxed process at them, and reports
-per-host traffic plus `sandbox.network.*` findings (raw IPs, uncommon ports, DGA-style names,
-DNS tunnelling, beaconing). A namespaces + seccomp + cgroup backend for
-Linux lives behind the `native-sandbox` cargo feature; build with
-`cargo build --features native-sandbox` once it has been validated on a Linux runner with
-unprivileged user namespaces. Policies: `strict`, `network-capture`,
-`permissive`, or a TOML file. The JSON report carries a `sandbox` object with the backend,
-policy, file diffs, network indicators, and — as the native backends land — process, syscall,
-registry, and memory-dump telemetry (`schema_version` 2.0).
 
 ## Install
-
-### From source (clone from GitHub)
 
 ```bash
 git clone https://github.com/tant28403-svg/deepdive
 cd deepdive
-cargo build --release
+cargo build --release --features disasm,java,wasm   # full analyzers
+# or just cargo build for the default set
 sudo install -m 755 target/release/deepdive /usr/local/bin/
 ```
 
-### One-liner from GitHub
+## Usage examples
 
 ```bash
-cargo install --git https://github.com/tant28403-svg/deepdive --locked
+# Scan a local repo (default: text output, exit 2 only if verdict is UNSAFE/BLOCK)
+deepdive scan ./repo
+
+# Deep scan with sandbox + JSON output
+# (sandbox runs "true" by default unless --sandbox-cmd is given)
+deepdive audit ./repo --deep --sandbox --sandbox-cmd "npm install && npm test" \
+  --format json --out report.json
+
+# Compare to a previous run (regression mode: exit 2 on new high/critical)
+deepdive scan ./repo --baseline report.json --regression
+
+# Check rules / update offline cache / test selftest
+deepdive rules list
+deepdive cache update --offline   # refreshes URLhaus feed when online
+# (cache update tries the feed by default; --offline skips fetching)
 ```
 
-### Prebuilt (no Rust needed)
+## Status / what v2 added
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/tant28403-svg/deepdive/main/install.sh | sh
-```
+v1.2 = static + YARA + Sigma + SBOM + lockfile checks.
 
-### Docker
+v2.0 = sandbox with structured telemetry, network capture, Windows process/registry/memory
+dumping, disassembly heuristics, Java/WASM/Android/.NET analyzers, baseline/regression mode,
+Intel feed matching, and firmware carving.
 
-```bash
-docker run --rm -v "$PWD:/work" ghcr.io/tant28403-svg/deepdive scan /work
-```
-
-## Usage
-
-```bash
-deepdive scan ./suspicious-repo
-deepdive scan ./payload.exe --format json --out report.json
-deepdive scan ./repo --offline --sbom cyclonedx --out sbom.json
-deepdive scan ./repo --offline --sbom spdx
-deepdive fetch https://github.com/user/repo --keep ./repo
-deepdive audit https://github.com/user/repo --sandbox --fail-on high
-```
+Still open (from the plan): Windows AppContainer / restricted-token confinement, ETW syscall
+tracing, Linux native backend validated as default, anti-analysis multi-run, ONNX ML signal,
+plugin system, fuzz targets. See `~/.opencode/plan/deepdive-plan.md` §17.13.
 
 ## License
 
