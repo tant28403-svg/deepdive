@@ -4,10 +4,14 @@
 //! before `exec`. Any failure aborts the spawn, which lets the caller fall back
 //! to bubblewrap/firejail.
 
-use caps::{clear, set, CapSet, Capability};
+use caps::{
+    CapSet, CapSet::Effective as CapEffective, CapSet::Inheritable as CapInheritable,
+    CapSet::Permitted as CapPermitted, Capability,
+};
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
 use nix::unistd::{chdir, getgid, getuid, pivot_root, setgid, setuid, Uid};
+use std::collections::HashSet;
 use std::io::Error;
 use std::path::Path;
 
@@ -176,13 +180,15 @@ fn set_no_new_privs() {
 fn drop_capabilities() {
     // Clear all capability sets using the caps crate.
     // CapSet::Effective, CapSet::Permitted, CapSet::Inheritable are the three sets.
-    let _ = clear(CapSet::Effective);
-    let _ = clear(CapSet::Permitted);
-    let _ = clear(CapSet::Inheritable);
-    // Apply the cleared sets to the current process
-    let _ = set(None, CapSet::Effective);
-    let _ = set(None, CapSet::Permitted);
-    let _ = set(None, CapSet::Inheritable);
+    let tid = None;
+    let _ = caps::clear(tid, CapEffective);
+    let _ = caps::clear(tid, CapPermitted);
+    let _ = caps::clear(tid, CapInheritable);
+    // Apply empty capability sets to the current process
+    let empty: HashSet<Capability> = HashSet::new();
+    let _ = caps::set(tid, CapEffective, &empty);
+    let _ = caps::set(tid, CapPermitted, &empty);
+    let _ = caps::set(tid, CapInheritable, &empty);
 }
 
 fn io_err(err: nix::Error) -> Error {

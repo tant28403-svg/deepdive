@@ -73,9 +73,8 @@ pub fn run_native(
         capture
             .and_then(|context| context.dns_addr)
             .and_then(|addr| {
-                tempfile::NamedTempFile::new().ok().map(|file| {
+                tempfile::NamedTempFile::new().ok().inspect(|file| {
                     let _ = std::fs::write(file.path(), format!("nameserver {}\n", addr.ip()));
-                    file
                 })
             })
     } else {
