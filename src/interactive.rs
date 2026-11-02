@@ -1,4 +1,3 @@
-use crate::cli::{Cli, Commands};
 use std::io::{self, Write};
 
 pub fn run() -> anyhow::Result<()> {
@@ -36,7 +35,6 @@ pub fn run() -> anyhow::Result<()> {
 }
 
 fn interactive_scan() -> anyhow::Result<()> {
-    use std::io::{BufRead, BufReader};
 
     print!("Path to scan: ");
     io::stdout().flush()?;
