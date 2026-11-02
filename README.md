@@ -1,10 +1,18 @@
 # deepdive
 
-**Scan repos and files *before* you run or clone them.**
+> **A security scanner that analyzes code, dependencies, binaries, and git history *before* you run or clone them.**  
+> Detects malware, secrets, supply-chain attacks, and suspicious behavior -- then gives you a clear verdict: **SAFE**, **REVIEW**, **UNSAFE**, or **BLOCK**.
 
-`deepdive` is a security scanner that reverse-engineers code, dependencies, binaries, and git history to detect malware, secrets, supply-chain attacks, and suspicious behavior — then gives you a clear verdict: **SAFE**, **REVIEW**, **UNSAFE**, or **BLOCK**.
+## What is deepdive?
 
----
+`deepdive` is a command-line tool for developers and security teams to **reverse-engineer and safety-check repositories, files, and binaries** before executing them. It combines static analysis, dependency auditing, binary inspection, and optional sandbox execution into a single workflow.
+
+**Use cases:**
+- **Pre-commit / CI gate**: Block malicious code before it lands
+- **Dependency review**: Find typosquatting, vulnerable versions, lockfile drift
+- **Malware triage**: Analyze suspicious binaries, scripts, archives, firmware
+- **Supply-chain security**: Verify third-party code before adding as dependency
+- **Incident response**: Quickly assess what a compromised artifact does
 
 ## Table of Contents
 
@@ -86,7 +94,7 @@ sudo install -m 755 target/release/deepdive /usr/local/bin/
 
 ---
 
-### `scan` — Local Static Analysis
+### `scan` -- Local Static Analysis
 
 ```bash
 # Scan a directory
@@ -99,7 +107,7 @@ deepdive scan ./suspicious-script.sh
 deepdive scan ./my-project --deep --offline --format json --out results.json
 ```
 
-### `audit` — Deep Scan (Local or Remote)
+### `audit` -- Deep Scan (Local or Remote)
 
 ```bash
 # Local path with git history
@@ -115,7 +123,7 @@ deepdive audit https://github.com/user/repo --keep ./cloned-repo
 deepdive audit ./my-project --sandbox --sandbox-cmd "npm install && npm test"
 ```
 
-### `fetch` — Clone & Scan Remote Repos
+### `fetch` -- Clone & Scan Remote Repos
 
 ```bash
 # Clone and scan (deletes temp clone after)
@@ -268,43 +276,43 @@ deepdive scan Cargo.lock --sbom spdx --out sbom.spdx.json
 ## What Gets Scanned
 
 ### 1. File-Level Analysis
-- **Magic bytes & file type detection** — Identifies PE, ELF, Mach-O, ZIP, TAR, GZIP, WASM, APK, DEX, etc.
-- **Embedded payloads** — Carves hidden executables, scripts, and firmware images from polyglots
-- **String extraction** — URLs, IPs, PowerShell commands, registry paths, base64 blobs
-- **Entropy analysis** — Detects packed/encrypted sections
+- **Magic bytes & file type detection** -- Identifies PE, ELF, Mach-O, ZIP, TAR, GZIP, WASM, APK, DEX, etc.
+- **Embedded payloads** -- Carves hidden executables, scripts, and firmware images from polyglots
+- **String extraction** -- URLs, IPs, PowerShell commands, registry paths, base64 blobs
+- **Entropy analysis** -- Detects packed/encrypted sections
 
 ### 2. Source Code Analysis
-- **Secrets detection** — API keys, tokens, passwords, private keys, JWTs, cloud credentials
-- **Dangerous APIs** — `eval()`, `exec()`, `child_process`, `ProcessBuilder`, `Runtime.exec`, `os.system`, `subprocess`, PowerShell IEX/encoded commands, download cradles
-- **Obfuscation patterns** — Base64 decode chains, `fromCharCode`, `atob`, dynamic `compile()`, string concatenation tricks
-- **AST-based taint tracking** — JavaScript/TypeScript (via tree-sitter) and Python data-flow from sources to sinks
-- **Sigma & YARA rules** — Custom detection rules in Sigma (YAML) or YARA format
-- **Polyglot detection** — Files valid as multiple formats simultaneously
+- **Secrets detection** -- API keys, tokens, passwords, private keys, JWTs, cloud credentials
+- **Dangerous APIs** -- `eval()`, `exec()`, `child_process`, `ProcessBuilder`, `Runtime.exec`, `os.system`, `subprocess`, PowerShell IEX/encoded commands, download cradles
+- **Obfuscation patterns** -- Base64 decode chains, `fromCharCode`, `atob`, dynamic `compile()`, string concatenation tricks
+- **AST-based taint tracking** -- JavaScript/TypeScript (via tree-sitter) and Python data-flow from sources to sinks
+- **Sigma & YARA rules** -- Custom detection rules in Sigma (YAML) or YARA format
+- **Polyglot detection** -- Files valid as multiple formats simultaneously
 
 ### 3. Binary Analysis (PE/ELF/Mach-O)
-- **Dangerous imports** — `VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread`, `URLDownloadToFile`, etc.
-- **Authenticode signature verification** — Checks for valid code signing
-- **Embedded PE detection** — Finds dropped payloads in overlays/sections
-- **Version metadata masquerading** — Detects binaries pretending to be system files
-- **Overlay data** — Appended payloads after last section
+- **Dangerous imports** -- `VirtualAllocEx`, `WriteProcessMemory`, `CreateRemoteThread`, `URLDownloadToFile`, etc.
+- **Authenticode signature verification** -- Checks for valid code signing
+- **Embedded PE detection** -- Finds dropped payloads in overlays/sections
+- **Version metadata masquerading** -- Detects binaries pretending to be system files
+- **Overlay data** -- Appended payloads after last section
 
 ### 4. Dependency Audit
-- **Lockfile parsing** — `Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements.txt`, `go.mod`, `pom.xml`, `build.gradle`, `composer.lock`
-- **Known vulnerabilities** — Queries OSV.dev (cached offline)
-- **Typosquatting detection** — Edit-distance matching against top packages (with allowlist)
-- **Dependency confusion** — Internal package names matching public registries
-- **Lockfile integrity** — Hash mismatches, manifest drift
+- **Lockfile parsing** -- `Cargo.lock`, `package-lock.json`, `yarn.lock`, `pnpm-lock.yaml`, `requirements.txt`, `go.mod`, `pom.xml`, `build.gradle`, `composer.lock`
+- **Known vulnerabilities** -- Queries OSV.dev (cached offline)
+- **Typosquatting detection** -- Edit-distance matching against top packages (with allowlist)
+- **Dependency confusion** -- Internal package names matching public registries
+- **Lockfile integrity** -- Hash mismatches, manifest drift
 
 ### 5. Git History (with `--deep`)
-- **Secret scanning in commits** — Finds secrets added then "removed"
-- **Dangerous API in diffs** — Suspicious code added in history
-- **Commit metadata analysis** — Anomalous authors, timestamps, messages
+- **Secret scanning in commits** -- Finds secrets added then "removed"
+- **Dangerous API in diffs** -- Suspicious code added in history
+- **Commit metadata analysis** -- Anomalous authors, timestamps, messages
 
 ### 6. Platform-Specific
-- **Windows** — LOLBins (certutil, bitsadmin, regsvr32, rundll32, mshta), scheduled tasks, registry persistence, ADS streams
-- **Android** — DEX analysis, manifest permissions, native libraries
-- **Java/.NET/WASM** — Bytecode/IL/WASM module analysis (feature-gated)
-- **Firmware** — SquashFS, UBI, CramFS, JFFS2 extraction and scanning
+- **Windows** -- LOLBins (certutil, bitsadmin, regsvr32, rundll32, mshta), scheduled tasks, registry persistence, ADS streams
+- **Android** -- DEX analysis, manifest permissions, native libraries
+- **Java/.NET/WASM** -- Bytecode/IL/WASM module analysis (feature-gated)
+- **Firmware** -- SquashFS, UBI, CramFS, JFFS2 extraction and scanning
 
 ---
 
