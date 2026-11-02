@@ -79,21 +79,6 @@ sudo install -m 755 target/release/deepdive /usr/local/bin/
 
 It prompts for path, format (`text`/`json`/`sarif`), sandbox (`y`/`n`), command, and output file, then prints the exact command it would run.
 
-Example session (choice 3 — fetch a repo):
-
-```bash
-deepdive interactive
-# Choose 3
-# Repo URL: https://github.com/user/repo
-# Keep clone at ./repo? y
-# Format [text]: json
-# Sandbox? y
-# Sandbox command (blank = true):
-# Output file (blank = stdout): report.json
-# Confirm run? y
-```
-
-The result is saved to `report.json` (or stdout if left blank) with `schema_version` 2.0, `verdict`, `findings`, and `sandbox` telemetry included. You can also copy the printed command and run it directly in your shell.
 
 Quick direct command (same result, faster):
 
