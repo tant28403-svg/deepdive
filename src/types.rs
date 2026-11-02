@@ -52,6 +52,9 @@ pub struct Finding {
     pub tags: Vec<String>,
 }
 
+/// Current report schema version. Additive changes bump the minor component.
+pub const SCHEMA_VERSION: &str = "2.0";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SandboxReport {
     pub command: String,
@@ -64,6 +67,25 @@ pub struct SandboxReport {
     pub files_modified: Vec<String>,
     pub files_deleted: Vec<String>,
     pub network_indicators: Vec<String>,
+    /// Backend actually used, e.g. `docker`, `linux-native`, `windows-native`.
+    #[serde(default)]
+    pub backend: String,
+    #[serde(default)]
+    pub policy: crate::sandbox::policy::SandboxPolicy,
+    #[serde(default)]
+    pub timed_out: bool,
+    #[serde(default)]
+    pub telemetry_degraded: bool,
+    #[serde(default)]
+    pub process_tree: Vec<crate::sandbox::telemetry::ProcessEvent>,
+    #[serde(default)]
+    pub syscalls: Vec<crate::sandbox::telemetry::SyscallEvent>,
+    #[serde(default)]
+    pub network_events: Vec<crate::sandbox::telemetry::NetworkEvent>,
+    #[serde(default)]
+    pub registry_changes: Vec<crate::sandbox::telemetry::RegistryChange>,
+    #[serde(default)]
+    pub memory_dumps: Vec<crate::sandbox::telemetry::MemoryDump>,
 }
 pub enum Verdict {
     Safe,

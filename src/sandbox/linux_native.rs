@@ -1,7 +1,10 @@
+use crate::sandbox::policy::{NetworkPolicy, SandboxPolicy};
+use crate::sandbox::process;
+use crate::sandbox::{snapshot, SandboxError};
 use crate::types::SandboxReport;
-use anyhow::{Context, Result};
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 pub fn bwrap_available() -> bool {
     Command::new("bwrap")
@@ -19,53 +22,72 @@ pub fn firejail_available() -> bool {
         .unwrap_or(false)
 }
 
-pub fn run_native(cmd: &str, target: &Path, timeout_secs: u64) -> Result<SandboxReport> {
+pub fn run_native(
+    policy: &SandboxPolicy,
+    cmd: &str,
+    target: &Path,
+) -> Result<SandboxReport, SandboxError> {
+    let use_bwrap = bwrap_available();
+    if !use_bwrap && !firejail_available() {
+        return Err(SandboxError::Unavailable(
+            "no linux sandbox available (install bubblewrap or firejail)".to_string(),
+        ));
+    }
+
     let mut report = SandboxReport {
         command: cmd.to_string(),
-        image: if bwrap_available() {
+        image: if use_bwrap {
             "linux-bwrap".to_string()
         } else {
             "linux-firejail".to_string()
         },
+        backend: if use_bwrap {
+            "linux-native".to_string()
+        } else {
+            "linux-firejail".to_string()
+        },
+        policy: policy.clone(),
         ..Default::default()
     };
+    if policy.network == NetworkPolicy::Capture {
+        // Capture proxy is scheduled for stage 20.
+        report.telemetry_degraded = true;
+    }
 
-    // Snapshot before.
-    let before = snapshot_dir(target);
+    let before = snapshot::capture(target);
 
-    let start = std::time::Instant::now();
-
-    let output = if bwrap_available() {
-        // bubblewrap: minimal isolated env, no network, bind target read-write.
-        Command::new("bwrap")
-            .arg("--unshare-all")
-            .arg("--unshare-net")
+    let mut command = if use_bwrap {
+        let mut command = Command::new("bwrap");
+        if policy.network == NetworkPolicy::Allow {
+            command
+                .arg("--unshare-user")
+                .arg("--unshare-pid")
+                .arg("--unshare-uts")
+                .arg("--unshare-ipc")
+                .arg("--unshare-cgroup-try");
+        } else {
+            command.arg("--unshare-all");
+        }
+        command
             .arg("--die-with-parent")
             .arg("--new-session")
+            .arg("--cap-drop")
+            .arg("ALL")
             .arg("--proc")
             .arg("/proc")
             .arg("--dev")
             .arg("/dev")
             .arg("--tmpfs")
-            .arg("/tmp")
-            .arg("--ro-bind")
-            .arg("/usr")
-            .arg("/usr")
-            .arg("--ro-bind")
-            .arg("/lib")
-            .arg("/lib")
-            .arg("--ro-bind")
-            .arg("/lib64")
-            .arg("/lib64")
-            .arg("--ro-bind")
-            .arg("/bin")
-            .arg("/bin")
-            .arg("--ro-bind")
-            .arg("/sbin")
-            .arg("/sbin")
-            .arg("--ro-bind")
-            .arg("/etc")
-            .arg("/etc")
+            .arg("/tmp");
+        for dir in ["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc"] {
+            if std::path::Path::new(dir).exists() {
+                command.arg("--ro-bind").arg(dir).arg(dir);
+            }
+        }
+        for path in &policy.writable {
+            command.arg("--bind").arg(path).arg(path);
+        }
+        command
             .arg("--bind")
             .arg(target)
             .arg("/work")
@@ -73,94 +95,60 @@ pub fn run_native(cmd: &str, target: &Path, timeout_secs: u64) -> Result<Sandbox
             .arg("/work")
             .arg("sh")
             .arg("-c")
-            .arg(cmd)
-            .output()
-            .context("run bwrap")?
-    } else if firejail_available() {
-        Command::new("firejail")
-            .arg("--net=none")
-            .arg("--private")
-            .arg("--whitelist=")
-            .arg(target)
+            .arg(cmd);
+        command
+    } else {
+        let mut command = Command::new("firejail");
+        command.arg("--quiet").arg("--private");
+        if policy.network == NetworkPolicy::Allow {
+            command.arg("--net=bridge");
+        } else {
+            command.arg("--net=none");
+        }
+        command
+            .arg(format!("--whitelist={}", target.display()))
             .arg("sh")
             .arg("-c")
-            .arg(format!("cd {} && {}", target.display(), cmd))
-            .output()
-            .context("run firejail")?
-    } else {
-        anyhow::bail!("no linux sandbox available (install bubblewrap or firejail)");
+            .arg(format!("cd {} && {}", target.display(), cmd));
+        command
     };
 
-    report.duration_ms = start.elapsed().as_millis() as u64;
-    report.exit_code = output.status.code();
-    report.stdout = String::from_utf8_lossy(&output.stdout).to_string();
-    report.stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    if policy.env_scrub {
+        command.env_clear();
+        if let Ok(path) = std::env::var("PATH") {
+            command.env("PATH", path);
+        }
+    }
 
-    let after = snapshot_dir(target);
-    diff_snapshots(&before, &after, &mut report);
+    let completed = process::run_with_timeout(
+        command,
+        Duration::from_secs(policy.timeout_secs.max(1)),
+        |_child| {},
+    )?;
 
-    // Network indicators.
+    report.duration_ms = completed.duration.as_millis() as u64;
+    report.timed_out = completed.timed_out;
+    report.exit_code = completed.exit_code;
+    report.stdout = String::from_utf8_lossy(&completed.stdout).to_string();
+    report.stderr = String::from_utf8_lossy(&completed.stderr).to_string();
+
+    let after = snapshot::capture(target);
+    let diff = snapshot::diff(&before, &after);
+    report.files_created = diff.created;
+    report.files_modified = diff.modified;
+    report.files_deleted = diff.deleted;
+
     let combined = format!("{}\n{}", report.stdout, report.stderr).to_lowercase();
-    for p in [
+    for pattern in [
         "connection refused",
         "network is unreachable",
         "could not resolve host",
         "name or service not known",
     ] {
-        if combined.contains(p) {
-            report.network_indicators.push(p.to_string());
+        if combined.contains(pattern) {
+            report.network_indicators.push(pattern.to_string());
         }
-    }
-
-    // timeout handling (process already done; informational)
-    if start.elapsed() > std::time::Duration::from_secs(timeout_secs) {
-        report.stderr.push_str("\n[timeout exceeded]");
     }
 
     Ok(report)
-}
-
-fn snapshot_dir(root: &Path) -> std::collections::BTreeMap<String, String> {
-    use sha2::{Digest, Sha256};
-    use walkdir::WalkDir;
-    let mut map = std::collections::BTreeMap::new();
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        let hash = std::fs::read(path)
-            .map(|b| {
-                let mut h = Sha256::new();
-                h.update(&b);
-                format!("{:x}", h.finalize())
-            })
-            .unwrap_or_default();
-        map.insert(rel, hash);
-    }
-    map
-}
-
-fn diff_snapshots(
-    before: &std::collections::BTreeMap<String, String>,
-    after: &std::collections::BTreeMap<String, String>,
-    report: &mut SandboxReport,
-) {
-    for (k, v) in after {
-        match before.get(k) {
-            None => report.files_created.push(k.clone()),
-            Some(prev) if prev != v => report.files_modified.push(k.clone()),
-            _ => {}
-        }
-    }
-    for k in before.keys() {
-        if !after.contains_key(k) {
-            report.files_deleted.push(k.clone());
-        }
-    }
 }

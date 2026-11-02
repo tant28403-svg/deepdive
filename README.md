@@ -10,6 +10,9 @@ v1.2.0 is released. Post-1.0 work landed incrementally:
 
 - `v1.1` — recursive archives and symlink escapes, expanded file types, Windows artifacts (ADS/reparse points, `.lnk`, MSI, scheduled tasks, OLE macros), deeper binary triage.
 - `v1.2` — YARA and Sigma rules, SBOM export, lockfile integrity, dependency confusion, taint-aware AST.
+- `v2.0` (in progress) — sandbox foundation: typed policy/backends, structured telemetry in the
+  JSON report, enforced timeouts, and `deepdive sandbox selftest`. Native Linux namespaces and
+  Windows AppContainer/ETW land in later stages.
 - Deferred to `v2` — syscall tracing, network capture, memory dumps, anti-analysis multi-run, disassembly/CFG, .NET/Java/Android/WASM, ML/ONNX, firmware.
 
 See the plan in `~/.opencode/plan/deepdive-plan.md`.
@@ -59,6 +62,22 @@ and reports when that data reaches a sink such as `eval`, `Function`, `child_pro
 `os.system`, `subprocess`, `pickle.loads`, `yaml.load`, or SQL `.execute`/`.query`.
 Taint propagates through simple assignments. This is intentionally conservative, not a
 full data-flow engine.
+
+## Sandbox
+
+Dynamic execution is opt-in and deepdive never invents a command:
+
+```bash
+deepdive scan ./repo --sandbox --sandbox-cmd "npm install && npm test"
+deepdive scan ./repo --sandbox --sandbox-backend native --sandbox-policy strict
+deepdive sandbox selftest --backend auto
+```
+
+Backends: `auto` (Docker when available, otherwise native), `native` (bubblewrap/firejail on
+Linux, Job Objects on Windows), `docker`, `none`. Policies: `strict`, `network-capture`,
+`permissive`, or a TOML file. The JSON report carries a `sandbox` object with the backend,
+policy, file diffs, network indicators, and — as the native backends land — process, syscall,
+registry, and memory-dump telemetry (`schema_version` 2.0).
 
 ## Install
 

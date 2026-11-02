@@ -358,6 +358,46 @@ fn lockfile_integrity_is_reported() {
 }
 
 #[test]
+fn scan_json_includes_schema_version_and_sandbox_key() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.js"), "const x = 1;").unwrap();
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap(), "--format", "json"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("\"schema_version\": \"2.0\""))
+        .stdout(predicate::str::contains("\"sandbox\": null"));
+}
+
+#[test]
+fn sandbox_selftest_rejects_unknown_backend() {
+    deepdive()
+        .args(["sandbox", "selftest", "--backend", "nope"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown backend"));
+}
+
+#[test]
+fn sandbox_backend_none_degrades_without_failing_the_scan() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.js"), "const x = 1;").unwrap();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--sandbox",
+            "--sandbox-cmd",
+            "true",
+            "--sandbox-backend",
+            "none",
+        ])
+        .assert()
+        .success()
+        .stderr(predicate::str::contains("sandbox disabled"));
+}
+
+#[test]
 fn tainted_ast_flow_is_reported() {
     let dir = TempDir::new().unwrap();
     std::fs::write(

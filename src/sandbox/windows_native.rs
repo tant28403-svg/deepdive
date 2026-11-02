@@ -1,7 +1,13 @@
 #[cfg(windows)]
+use crate::sandbox::policy::SandboxPolicy;
+#[cfg(windows)]
+use crate::sandbox::snapshot;
+#[cfg(windows)]
+use crate::sandbox::SandboxError;
+#[cfg(windows)]
 use crate::types::SandboxReport;
 #[cfg(windows)]
-use anyhow::{Context, Result};
+use anyhow::Context;
 #[cfg(windows)]
 use std::ffi::OsStr;
 #[cfg(windows)]
@@ -15,7 +21,7 @@ use windows::Win32::Foundation::CloseHandle;
 #[cfg(windows)]
 use windows::Win32::System::JobObjects::{
     AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_PROCESS_MEMORY,
 };
 #[cfg(windows)]
@@ -24,24 +30,31 @@ use windows::Win32::System::Threading::{
 };
 
 #[cfg(windows)]
-pub fn run_native(cmd: &str, target: &Path, timeout_secs: u64) -> Result<SandboxReport> {
+pub fn run_native(
+    policy: &SandboxPolicy,
+    cmd: &str,
+    target: &Path,
+) -> Result<SandboxReport, SandboxError> {
     let mut report = SandboxReport {
         command: cmd.to_string(),
         image: "windows-native".to_string(),
+        backend: "windows-native".to_string(),
+        policy: policy.clone(),
+        // ETW/registry telemetry lands in stage 19.
+        telemetry_degraded: true,
         ..Default::default()
     };
 
-    // Snapshot before.
-    let before = snapshot_dir(target);
+    let before = snapshot::capture(target);
 
-    // Create job object.
-    let job = unsafe { CreateJobObjectW(None, None).context("CreateJobObject")? };
+    let job = unsafe { CreateJobObjectW(None, None) }.context("CreateJobObject")?;
 
-    // Set limits.
     let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-    info.BasicLimitInformation.LimitFlags =
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY;
-    info.ProcessMemoryLimit = 512 * 1024 * 1024; // 512 MB
+    info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        | JOB_OBJECT_LIMIT_PROCESS_MEMORY
+        | JOB_OBJECT_LIMIT_ACTIVE_PROCESS;
+    info.BasicLimitInformation.ActiveProcessLimit = policy.pids.max(1);
+    info.ProcessMemoryLimit = policy.memory_mb.saturating_mul(1024 * 1024) as usize;
     unsafe {
         SetInformationJobObject(
             job,
@@ -52,8 +65,19 @@ pub fn run_native(cmd: &str, target: &Path, timeout_secs: u64) -> Result<Sandbox
         .context("SetInformationJobObject")?;
     }
 
-    // Build command line: cmd /c <cmd>, with working dir = target.
-    let full_cmd = format!("cmd.exe /c {}", cmd);
+    let full_cmd = {
+        let io_dir = tempfile::tempdir().context("create sandbox io dir")?;
+        let out_path = io_dir.path().join("stdout.txt");
+        let err_path = io_dir.path().join("stderr.txt");
+        let full = format!(
+            "cmd.exe /c {} > \"{}\" 2> \"{}\"",
+            cmd,
+            out_path.display(),
+            err_path.display()
+        );
+        (full, io_dir, out_path, err_path)
+    };
+    let (full_cmd, io_dir, out_path, err_path) = full_cmd;
     let cwd_wide: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut cmd_wide: Vec<u16> = OsStr::new(&full_cmd).encode_wide().chain(Some(0)).collect();
 
@@ -80,91 +104,59 @@ pub fn run_native(cmd: &str, target: &Path, timeout_secs: u64) -> Result<Sandbox
         .context("CreateProcessW")?;
     }
 
-    // Assign to job.
     unsafe {
         AssignProcessToJobObject(job, pi.hProcess).context("AssignProcessToJobObject")?;
     }
 
-    // Resume.
     unsafe {
         ResumeThread(pi.hThread);
     }
 
-    // Wait with timeout.
-    let timeout_ms = (timeout_secs * 1000) as u32;
+    let timeout_ms = policy.timeout_secs.saturating_mul(1000) as u32;
     let wait =
         unsafe { windows::Win32::System::Threading::WaitForSingleObject(pi.hProcess, timeout_ms) };
-    // WAIT_TIMEOUT = 0x00000102
-    if wait == windows::Win32::Foundation::WAIT_TIMEOUT {
+    report.timed_out = wait == windows::Win32::Foundation::WAIT_TIMEOUT;
+    if report.timed_out {
         unsafe {
             let _ = windows::Win32::System::Threading::TerminateProcess(pi.hProcess, 1);
         }
         report.stderr.push_str("\n[timeout exceeded]");
     }
 
-    // Exit code.
     let mut code: u32 = 0;
     unsafe {
         let _ = windows::Win32::System::Threading::GetExitCodeProcess(pi.hProcess, &mut code);
     }
     report.exit_code = Some(code as i32);
     report.duration_ms = start.elapsed().as_millis() as u64;
+    report.stdout = std::fs::read_to_string(&out_path).unwrap_or_default();
+    report.stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
+    drop(io_dir);
 
-    // Cleanup handles.
     unsafe {
         let _ = CloseHandle(pi.hThread);
         let _ = CloseHandle(pi.hProcess);
         let _ = CloseHandle(job);
     }
 
-    // Snapshot after.
-    let after = snapshot_dir(target);
-    diff_snapshots(&before, &after, &mut report);
+    let after = snapshot::capture(target);
+    let diff = snapshot::diff(&before, &after);
+    report.files_created = diff.created;
+    report.files_modified = diff.modified;
+    report.files_deleted = diff.deleted;
+
+    let combined = format!("{}\n{}", report.stdout, report.stderr).to_lowercase();
+    for pattern in [
+        "connection refused",
+        "connection timed out",
+        "no such host",
+        "network is unreachable",
+        "no route to host",
+    ] {
+        if combined.contains(pattern) {
+            report.network_indicators.push(pattern.to_string());
+        }
+    }
 
     Ok(report)
-}
-
-fn snapshot_dir(root: &Path) -> std::collections::BTreeMap<String, String> {
-    use sha2::{Digest, Sha256};
-    use walkdir::WalkDir;
-    let mut map = std::collections::BTreeMap::new();
-    for entry in WalkDir::new(root).into_iter().filter_map(|e| e.ok()) {
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let path = entry.path();
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        let hash = std::fs::read(path)
-            .map(|b| {
-                let mut h = Sha256::new();
-                h.update(&b);
-                format!("{:x}", h.finalize())
-            })
-            .unwrap_or_default();
-        map.insert(rel, hash);
-    }
-    map
-}
-
-fn diff_snapshots(
-    before: &std::collections::BTreeMap<String, String>,
-    after: &std::collections::BTreeMap<String, String>,
-    report: &mut SandboxReport,
-) {
-    for (k, v) in after {
-        match before.get(k) {
-            None => report.files_created.push(k.clone()),
-            Some(prev) if prev != v => report.files_modified.push(k.clone()),
-            _ => {}
-        }
-    }
-    for k in before.keys() {
-        if !after.contains_key(k) {
-            report.files_deleted.push(k.clone());
-        }
-    }
 }

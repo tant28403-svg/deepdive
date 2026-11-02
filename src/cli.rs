@@ -44,7 +44,7 @@ pub struct ScanArgs {
     /// Parallelism (defaults to the number of CPUs).
     #[arg(long)]
     pub threads: Option<usize>,
-    /// Extra TOML rules file.
+    /// Extra rules: TOML, Sigma YAML, or YARA file, or a directory.
     #[arg(long)]
     pub rules: Option<PathBuf>,
     /// Exit with code 2 if any finding reaches this severity.
@@ -56,6 +56,12 @@ pub struct ScanArgs {
     /// Emit a Software Bill of Materials instead of a scan report.
     #[arg(long, value_name = "FORMAT", value_parser = ["cyclonedx", "spdx"])]
     pub sbom: Option<String>,
+    /// Sandbox backend: auto, native, docker, or none.
+    #[arg(long, default_value = "auto")]
+    pub sandbox_backend: String,
+    /// Sandbox policy: strict, network-capture, permissive, or a TOML file.
+    #[arg(long, default_value = "strict")]
+    pub sandbox_policy: String,
 }
 
 impl From<&ScanArgs> for engine::Options {
@@ -74,6 +80,8 @@ impl From<&ScanArgs> for engine::Options {
             fail_on: args.fail_on.clone(),
             no_color: args.no_color,
             sbom: args.sbom.clone(),
+            sandbox_backend: args.sandbox_backend.clone(),
+            sandbox_policy: args.sandbox_policy.clone(),
         }
     }
 }
@@ -126,6 +134,11 @@ pub enum Commands {
         #[command(subcommand)]
         action: CacheAction,
     },
+    /// Sandbox diagnostics.
+    Sandbox {
+        #[command(subcommand)]
+        action: SandboxAction,
+    },
     /// Generate shell completions.
     Completions {
         #[arg(value_enum)]
@@ -149,6 +162,19 @@ pub enum CacheAction {
     Update,
     /// Delete all cached data.
     Clear,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SandboxAction {
+    /// Run escape probes against the configured sandbox backend.
+    Selftest {
+        /// Sandbox backend: auto, native, docker, or none.
+        #[arg(long, default_value = "auto")]
+        backend: String,
+        /// Sandbox policy: strict, network-capture, permissive, or a TOML file.
+        #[arg(long, default_value = "strict")]
+        policy: String,
+    },
 }
 
 impl Cli {
@@ -206,6 +232,7 @@ impl Cli {
             }
             Commands::Rules { action } => run_rules(action),
             Commands::Cache { action } => run_cache(action),
+            Commands::Sandbox { action } => run_sandbox(action),
             Commands::Completions { shell } => {
                 use clap::CommandFactory;
                 let mut cmd = Cli::command();
@@ -381,6 +408,48 @@ fn run_rules(action: RulesAction) -> Result<()> {
                         }
                         std::process::exit(1);
                     }
+                }
+            }
+        }
+    }
+}
+
+fn run_sandbox(action: SandboxAction) -> Result<()> {
+    use crate::sandbox::policy::{Backend, SandboxPolicy};
+    use crate::sandbox::{selftest, CheckState};
+
+    match action {
+        SandboxAction::Selftest { backend, policy } => {
+            let backend = Backend::parse(&backend)
+                .ok_or_else(|| anyhow::anyhow!("unknown backend '{}'", backend))?;
+            let policy = SandboxPolicy::from_spec(&policy)?.with_backend(backend);
+            println!(
+                "sandbox selftest (backend={}, network={})",
+                policy.backend,
+                policy.network_label()
+            );
+            match selftest::run(&policy) {
+                Ok(outcome) => {
+                    println!("backend: {}", outcome.backend);
+                    for check in &outcome.checks {
+                        let label = match check.state {
+                            CheckState::Pass => "PASS",
+                            CheckState::Warn => "WARN",
+                            CheckState::Fail => "FAIL",
+                        };
+                        println!("  [{}] {} - {}", label, check.name, check.detail);
+                    }
+                    if outcome.passed {
+                        println!("OK: sandbox selftest passed");
+                        Ok(())
+                    } else {
+                        eprintln!("sandbox selftest failed");
+                        std::process::exit(2);
+                    }
+                }
+                Err(err) => {
+                    eprintln!("sandbox selftest could not run: {}", err);
+                    std::process::exit(2);
                 }
             }
         }

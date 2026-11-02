@@ -20,6 +20,8 @@ pub struct Options {
     pub deep: bool,
     pub sandbox: bool,
     pub sandbox_cmd: Option<String>,
+    pub sandbox_backend: String,
+    pub sandbox_policy: String,
     pub max_size: u64,
     pub threads: Option<usize>,
     pub rules: Vec<PathBuf>,
@@ -38,6 +40,8 @@ impl Default for Options {
             deep: false,
             sandbox: false,
             sandbox_cmd: None,
+            sandbox_backend: "auto".to_string(),
+            sandbox_policy: "strict".to_string(),
             max_size: 100,
             threads: None,
             rules: Vec::new(),
@@ -162,31 +166,18 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
     }
 
     // Opt-in sandbox execution.
+    let mut sandbox_report: Option<crate::types::SandboxReport> = None;
     if opts.sandbox || opts.sandbox_cmd.is_some() {
         let command = opts
             .sandbox_cmd
             .clone()
             .unwrap_or_else(|| "true".to_string());
-        match crate::sandbox::run(&command, path, 300) {
+        match build_sandbox_policy(opts).and_then(|policy| {
+            crate::sandbox::run(&policy, &command, path).map_err(|err| anyhow::anyhow!("{}", err))
+        }) {
             Ok(report) => {
-                findings.extend(crate::sandbox::docker::behavioral_findings(&report));
-                println!();
-                println!("[sandbox] backend: {}", report.image);
-                println!("[sandbox] exit code: {:?}", report.exit_code);
-                println!("[sandbox] duration: {} ms", report.duration_ms);
-                println!("[sandbox] files created: {}", report.files_created.len());
-                println!("[sandbox] files modified: {}", report.files_modified.len());
-                println!("[sandbox] files deleted: {}", report.files_deleted.len());
-                println!(
-                    "[sandbox] network indicators: {}",
-                    report.network_indicators.len()
-                );
-                if !report.stdout.is_empty() {
-                    println!("[sandbox stdout]\n{}", report.stdout);
-                }
-                if !report.stderr.is_empty() {
-                    println!("[sandbox stderr]\n{}", report.stderr);
-                }
+                findings.extend(crate::sandbox::behavioral_findings(&report));
+                sandbox_report = Some(report);
             }
             Err(err) => eprintln!("[sandbox] failed: {}", err),
         }
@@ -223,11 +214,13 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
     match opts.format.to_lowercase().as_str() {
         "json" => {
             let content = serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": crate::types::SCHEMA_VERSION,
                 "files_scanned": files.len(),
                 "risk_score": score,
                 "verdict": verdict.as_str(),
                 "suppressed": suppressed,
                 "findings": reported,
+                "sandbox": sandbox_report,
             }))?;
             write_output(&opts.out, &content)?;
         }
@@ -281,6 +274,9 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
             if suppressed > 0 {
                 println!("Suppressed by .deepdive.toml: {}", suppressed);
             }
+            if let Some(report) = &sandbox_report {
+                print_sandbox_report(report);
+            }
         }
     }
 
@@ -299,6 +295,57 @@ fn exit_code(opts: &Options, verdict: Verdict, findings: &[Finding]) -> i32 {
         Verdict::Safe => 0,
         Verdict::Review => 1,
         Verdict::Unsafe | Verdict::Block => 2,
+    }
+}
+
+fn build_sandbox_policy(opts: &Options) -> Result<crate::sandbox::policy::SandboxPolicy> {
+    use crate::sandbox::policy::{Backend, SandboxPolicy};
+
+    let backend = Backend::parse(&opts.sandbox_backend)
+        .ok_or_else(|| anyhow::anyhow!("unknown sandbox backend '{}'", opts.sandbox_backend))?;
+    Ok(SandboxPolicy::from_spec(&opts.sandbox_policy)?.with_backend(backend))
+}
+
+fn print_sandbox_report(report: &crate::types::SandboxReport) {
+    println!();
+    println!("[sandbox] backend: {}", report.backend);
+    println!(
+        "[sandbox] policy: network={}",
+        report.policy.network_label()
+    );
+    println!("[sandbox] exit code: {:?}", report.exit_code);
+    println!("[sandbox] duration: {} ms", report.duration_ms);
+    println!("[sandbox] timed out: {}", report.timed_out);
+    println!("[sandbox] files created: {}", report.files_created.len());
+    println!("[sandbox] files modified: {}", report.files_modified.len());
+    println!("[sandbox] files deleted: {}", report.files_deleted.len());
+    println!(
+        "[sandbox] network indicators: {}",
+        report.network_indicators.len()
+    );
+    if !report.process_tree.is_empty() {
+        println!("[sandbox] processes: {}", report.process_tree.len());
+    }
+    if !report.syscalls.is_empty() {
+        println!("[sandbox] syscalls: {}", report.syscalls.len());
+    }
+    if !report.network_events.is_empty() {
+        println!("[sandbox] network events: {}", report.network_events.len());
+    }
+    if !report.registry_changes.is_empty() {
+        println!(
+            "[sandbox] registry changes: {}",
+            report.registry_changes.len()
+        );
+    }
+    if !report.memory_dumps.is_empty() {
+        println!("[sandbox] memory dumps: {}", report.memory_dumps.len());
+    }
+    if !report.stdout.is_empty() {
+        println!("[sandbox stdout]\n{}", report.stdout);
+    }
+    if !report.stderr.is_empty() {
+        println!("[sandbox stderr]\n{}", report.stderr);
     }
 }
 
