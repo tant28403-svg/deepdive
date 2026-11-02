@@ -948,6 +948,7 @@ dependencies = [
  "tree-sitter-typescript",
  "url",
  "walkdir",
+ "wasmparser 0.245.1",
  "windows",
  "yara-x",
  "zip",

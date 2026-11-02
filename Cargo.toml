@@ -96,9 +96,16 @@ yara = ["dep:yara-x"]
 native-sandbox = ["dep:nix", "dep:libc", "dep:seccompiler"]
 # Disassembly and control-flow heuristics for PE/ELF.
 disasm = ["dep:iced-x86"]
+# Managed runtimes.
+java = []
+wasm = ["dep:wasmparser"]
 
 [dependencies.git2]
 version = "0.19"
+optional = true
+
+[dependencies.wasmparser]
+version = "0"
 optional = true
 
 [dependencies.iced-x86]

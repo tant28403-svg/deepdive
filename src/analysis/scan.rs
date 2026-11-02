@@ -53,10 +53,22 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
             }
         }
         FileType::Bytecode => {
-            // JVM/Android archives are zip containers; .class/.wasm analysis is a v2 item.
             if let Ok(bytes) = std::fs::read(path) {
-                if bytes.len() >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B {
+                let is_zip = bytes.len() >= 4 && bytes[0] == 0x50 && bytes[1] == 0x4B;
+                if is_zip {
+                    // JVM/Android archives are zip containers.
                     findings.extend(crate::analysis::archive::scan(path, &bytes));
+                    #[cfg(feature = "java")]
+                    findings.extend(crate::analysis::java::scan_archive(path, &bytes));
+                } else {
+                    #[cfg(feature = "java")]
+                    if bytes.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE]) {
+                        findings.extend(crate::analysis::java::scan_class(path, &bytes));
+                    }
+                    #[cfg(feature = "wasm")]
+                    if bytes.starts_with(&[0x00, 0x61, 0x73, 0x6D]) {
+                        findings.extend(crate::analysis::wasm::scan(path, &bytes));
+                    }
                 }
             }
         }

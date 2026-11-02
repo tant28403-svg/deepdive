@@ -10,6 +10,8 @@ pub mod disasm;
 pub mod document;
 pub mod file_type;
 pub mod git_history;
+#[cfg(feature = "java")]
+pub mod java;
 pub mod obfuscation;
 pub mod polyglot;
 pub mod rules;
@@ -19,5 +21,7 @@ pub mod sigma;
 pub mod source;
 pub mod symlinks;
 pub mod walker;
+#[cfg(feature = "wasm")]
+pub mod wasm;
 pub mod windows_extras;
 pub mod yara;

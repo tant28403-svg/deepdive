@@ -45,6 +45,15 @@ Build with `cargo build --release --features disasm` to decode PE/ELF executable
 with iced-x86 and flag indirect control flow (dynamic API resolution, obfuscation) and
 anti-analysis instructions (`disasm.anti-analysis`, `disasm.indirect-control-flow`).
 
+## Managed runtimes
+
+Optional analyzers, off by default:
+
+- `--features java` — scans `.class` constant pools and every `.class` inside JAR/WAR/APK
+  archives for process execution, JNDI, deserialization, and remote class-loading references.
+- `--features wasm` — flags WASI imports that grant filesystem or network access and
+  dangerous `env` host functions.
+
 ## Dependency checks
 
 deepdive reads npm, pnpm, Yarn, Cargo, pip, Go, and Bundler metadata. In addition to
