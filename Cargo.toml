@@ -85,7 +85,7 @@ git-backend-git2 = ["dep:git2"]
 yara = ["dep:yara-x"]
 # Native Linux sandbox (namespaces + seccomp + cgroups). Off by default until it
 # has been validated on a Linux runner with unprivileged user namespaces.
-native-sandbox = ["dep:nix", "dep:libc", "dep:seccompiler"]
+native-sandbox = ["dep:nix", "dep:caps", "dep:libc", "dep:seccompiler"]
 # Disassembly and control-flow heuristics for PE/ELF.
 disasm = ["dep:iced-x86"]
 # Managed runtimes.
@@ -131,6 +131,7 @@ path = "src/main.rs"
 nix = { version = "0.29", features = ["sched", "mount", "fs", "user", "process", "signal"], optional = true }
 libc = { version = "0.2", optional = true }
 seccompiler = { version = "0.4", optional = true }
+caps = { version = "0.5", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

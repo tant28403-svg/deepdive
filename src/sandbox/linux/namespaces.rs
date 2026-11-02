@@ -4,6 +4,7 @@
 //! before `exec`. Any failure aborts the spawn, which lets the caller fall back
 //! to bubblewrap/firejail.
 
+use caps::{clear, set, CapSet, Capability};
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
 use nix::sched::{unshare, CloneFlags};
 use nix::unistd::{chdir, getgid, getuid, pivot_root, setgid, setuid, Uid};
@@ -114,26 +115,29 @@ fn setup_root(target: &Path, root: &Path, resolv: Option<&Path>) -> Result<(), E
     }
 
     if Path::new("/dev").exists() {
+        let dev_dest = root.join("dev");
         mount(
             Some("/dev"),
-            root.join("dev"),
+            &dev_dest,
             None::<&str>,
             MsFlags::MS_BIND | MsFlags::MS_REC,
             None::<&str>,
         )
         .map_err(io_err)?;
     }
+    let proc_dest = root.join("proc");
     mount(
         Some("proc"),
-        root.join("proc"),
+        &proc_dest,
         Some("proc"),
         MsFlags::empty(),
         None::<&str>,
     )
     .map_err(io_err)?;
+    let tmp_dest = root.join("tmp");
     mount(
         Some("tmpfs"),
-        root.join("tmp"),
+        &tmp_dest,
         Some("tmpfs"),
         MsFlags::empty(),
         None::<&str>,
@@ -141,9 +145,10 @@ fn setup_root(target: &Path, root: &Path, resolv: Option<&Path>) -> Result<(), E
     .map_err(io_err)?;
 
     // The scanned workspace, writable.
+    let work_dest = root.join("work");
     mount(
         Some(target),
-        root.join("work"),
+        &work_dest,
         None::<&str>,
         MsFlags::MS_BIND | MsFlags::MS_REC,
         None::<&str>,
@@ -169,19 +174,15 @@ fn set_no_new_privs() {
 }
 
 fn drop_capabilities() {
-    // Zeroed v3 capability header/data drop every capability set.
-    let mut header = libc::__user_cap_header_struct {
-        version: 0x2008_0522,
-        pid: 0,
-    };
-    let data = [libc::__user_cap_data_struct {
-        effective: 0,
-        permitted: 0,
-        inheritable: 0,
-    }; 2];
-    unsafe {
-        libc::capset(&mut header, data.as_ptr());
-    }
+    // Clear all capability sets using the caps crate.
+    // CapSet::Effective, CapSet::Permitted, CapSet::Inheritable are the three sets.
+    let _ = clear(CapSet::Effective);
+    let _ = clear(CapSet::Permitted);
+    let _ = clear(CapSet::Inheritable);
+    // Apply the cleared sets to the current process
+    let _ = set(None, CapSet::Effective);
+    let _ = set(None, CapSet::Permitted);
+    let _ = set(None, CapSet::Inheritable);
 }
 
 fn io_err(err: nix::Error) -> Error {
