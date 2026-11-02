@@ -68,7 +68,25 @@ cargo build --release --features disasm,java,wasm   # full analyzers
 sudo install -m 755 target/release/deepdive /usr/local/bin/
 ```
 
-## Usage examples
+### If `deepdive` command not found after install
+
+```bash
+# Confirm build exists
+ls -la ~/deepdive/target/release/deepdive
+which -a deepdive
+
+# Rebuild if pull was blocked by Cargo.lock
+git checkout -- Cargo.lock
+git pull
+cargo build --release
+
+# Install (old v1 binary may shadow in PATH)
+sudo cp ~/deepdive/target/release/deepdive /usr/local/bin/
+# Or use the binary directly without installing
+~/deepdive/target/release/deepdive version
+```
+
+### Usage examples
 
 ```bash
 # Scan a local repo (default: text output, exit 2 only if verdict is UNSAFE/BLOCK)
