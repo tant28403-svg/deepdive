@@ -45,6 +45,8 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
                 findings.extend(crate::analysis::binary::scan(path, &bytes));
                 #[cfg(feature = "disasm")]
                 findings.extend(crate::analysis::disasm::scan(path, &bytes));
+                #[cfg(feature = "dotnet")]
+                findings.extend(crate::analysis::dotnet::scan(path, &bytes));
             }
         }
         FileType::Archive => {
@@ -60,6 +62,8 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
                     findings.extend(crate::analysis::archive::scan(path, &bytes));
                     #[cfg(feature = "java")]
                     findings.extend(crate::analysis::java::scan_archive(path, &bytes));
+                    #[cfg(feature = "android")]
+                    findings.extend(crate::analysis::android::scan_apk(path, &bytes));
                 } else {
                     #[cfg(feature = "java")]
                     if bytes.starts_with(&[0xCA, 0xFE, 0xBA, 0xBE]) {

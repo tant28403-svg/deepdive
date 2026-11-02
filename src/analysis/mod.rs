@@ -1,3 +1,5 @@
+#[cfg(feature = "android")]
+pub mod android;
 pub mod archive;
 pub mod ast;
 pub mod baseline;
@@ -9,6 +11,8 @@ pub mod deps;
 #[cfg(feature = "disasm")]
 pub mod disasm;
 pub mod document;
+#[cfg(feature = "dotnet")]
+pub mod dotnet;
 pub mod file_type;
 pub mod git_history;
 pub mod intel;

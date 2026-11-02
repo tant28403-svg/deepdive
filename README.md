@@ -53,6 +53,11 @@ Optional analyzers, off by default:
   archives for process execution, JNDI, deserialization, and remote class-loading references.
 - `--features wasm` — flags WASI imports that grant filesystem or network access and
   dangerous `env` host functions.
+- `--features android` — scans `classes*.dex` string tables in APKs for process execution,
+  dynamic code loading, SMS, reflection, and package-install APIs.
+- `--features dotnet` — reads the CLI `#Strings` heap from managed assemblies and flags
+  runtime assembly loading, P/Invoke, process start, downloads, registry access, and
+  obfuscator markers.
 
 ## Regression mode and threat intel
 

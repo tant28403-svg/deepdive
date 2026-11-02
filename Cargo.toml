@@ -97,6 +97,8 @@ native-sandbox = ["dep:nix", "dep:libc", "dep:seccompiler"]
 # Disassembly and control-flow heuristics for PE/ELF.
 disasm = ["dep:iced-x86"]
 # Managed runtimes.
+android = []
+dotnet = []
 java = []
 wasm = ["dep:wasmparser"]
 
