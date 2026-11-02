@@ -117,6 +117,10 @@ pub fn run_native(
         ResumeThread(pi.hThread);
     }
 
+    // Watch the job for short-lived children and dump executable memory while
+    // they are still alive.
+    let monitor = Monitor::start(pi.dwProcessId);
+
     let timeout_ms = policy.timeout_secs.saturating_mul(1000) as u32;
     let wait =
         unsafe { windows::Win32::System::Threading::WaitForSingleObject(pi.hProcess, timeout_ms) };
@@ -138,11 +142,18 @@ pub fn run_native(
     report.stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
     drop(io_dir);
 
-    // Sample the process list while the job is still open so live children are
-    // visible, then tear the job down.
+    // Collect what the monitor saw, then sample the process list while the job
+    // is still open so live children are visible before it is torn down.
+    let (mut monitored, dumps) = monitor.stop();
     let processes_after = crate::sandbox::proctree::snapshot();
-    report.process_tree =
-        crate::sandbox::proctree::spawned_since(&processes_before, &processes_after);
+    let mut seen: std::collections::HashSet<u32> = monitored.iter().map(|p| p.pid).collect();
+    for process in crate::sandbox::proctree::spawned_since(&processes_before, &processes_after) {
+        if seen.insert(process.pid) {
+            monitored.push(process);
+        }
+    }
+    report.process_tree = monitored;
+    report.memory_dumps = dumps;
     let registry_after = crate::sandbox::registry::capture_persistence();
     report.registry_changes = crate::sandbox::registry::diff(&registry_before, &registry_after);
 
@@ -172,6 +183,117 @@ pub fn run_native(
     }
 
     Ok(report)
+}
+
+/// Polls the process list while a job runs, recording sandbox descendants and
+/// dumping executable memory from the ones that are still alive.
+#[cfg(windows)]
+struct Monitor {
+    stop: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+    events: std::sync::Arc<std::sync::Mutex<Vec<crate::sandbox::telemetry::ProcessEvent>>>,
+    dumps: std::sync::Arc<std::sync::Mutex<Vec<crate::sandbox::telemetry::MemoryDump>>>,
+}
+
+#[cfg(windows)]
+impl Monitor {
+    fn start(root_pid: u32) -> Self {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        let stop = Arc::new(AtomicBool::new(false));
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let dumps = Arc::new(Mutex::new(Vec::new()));
+
+        let thread_stop = stop.clone();
+        let thread_events = events.clone();
+        let thread_dumps = dumps.clone();
+        let handle = std::thread::spawn(move || {
+            let dir = crate::sandbox::memory::dump_dir();
+            let _ = std::fs::create_dir_all(&dir);
+            let mut sandbox_pids: std::collections::HashSet<u32> =
+                std::collections::HashSet::from([root_pid]);
+            let mut seen: std::collections::HashSet<u32> = std::collections::HashSet::new();
+            let mut dumped = 0u32;
+
+            while !thread_stop.load(Ordering::Relaxed) {
+                let snapshot = crate::sandbox::proctree::snapshot();
+                // Expand the sandbox set transitively (children can appear in
+                // any order across polls).
+                let mut changed = true;
+                while changed {
+                    changed = false;
+                    for process in &snapshot {
+                        if let Some(parent) = process.parent_pid {
+                            if sandbox_pids.contains(&parent)
+                                && !sandbox_pids.contains(&process.pid)
+                            {
+                                sandbox_pids.insert(process.pid);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+
+                for process in &snapshot {
+                    if !sandbox_pids.contains(&process.pid)
+                        || process.pid == root_pid
+                        || !seen.insert(process.pid)
+                    {
+                        continue;
+                    }
+                    if let Ok(mut guard) = thread_events.lock() {
+                        guard.push(process.clone());
+                    }
+                    if dumped < 20 {
+                        dumped += 1;
+                        let found = crate::sandbox::memory::dump_executable_regions(
+                            process.pid,
+                            &dir,
+                            8 * 1024 * 1024,
+                        );
+                        if !found.is_empty() {
+                            if let Ok(mut guard) = thread_dumps.lock() {
+                                guard.extend(found);
+                            }
+                        }
+                    }
+                }
+
+                std::thread::sleep(std::time::Duration::from_millis(75));
+            }
+        });
+
+        Self {
+            stop,
+            handle: Some(handle),
+            events,
+            dumps,
+        }
+    }
+
+    fn stop(
+        mut self,
+    ) -> (
+        Vec<crate::sandbox::telemetry::ProcessEvent>,
+        Vec<crate::sandbox::telemetry::MemoryDump>,
+    ) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+        let events = self
+            .events
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        let dumps = self
+            .dumps
+            .lock()
+            .map(|guard| guard.clone())
+            .unwrap_or_default();
+        (events, dumps)
+    }
 }
 
 /// Build a UTF-16 environment block. When scrubbing, only the variables a

@@ -12,6 +12,8 @@ pub mod snapshot;
 pub mod telemetry;
 
 #[cfg(windows)]
+pub mod memory;
+#[cfg(windows)]
 pub mod proctree;
 #[cfg(windows)]
 pub mod registry;
