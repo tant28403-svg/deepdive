@@ -68,6 +68,23 @@ cargo build --release --features disasm,java,wasm   # full analyzers
 sudo install -m 755 target/release/deepdive /usr/local/bin/
 ```
 
+### Interactive guided mode
+
+If you prefer menus over flags:
+
+```bash
+deepdive interactive
+# 1. Scan a file/dir
+# 2. Deep audit (git + sandbox)
+# 3. Fetch remote repo
+# 4. Rules / cache
+# 5. Sandbox selftest
+# 6. Cache update/clear
+# 7. Exit
+```
+
+It prompts for path, format (`text`/`json`/`sarif`), sandbox (`y`/`n`), command, and output file, then prints the exact command it would run.
+
 ### If `deepdive` command not found after install
 
 ```bash
