@@ -93,7 +93,60 @@ fn interactive_audit() -> anyhow::Result<()> {
 
 fn interactive_fetch() -> anyhow::Result<()> {
     println!("Fetch = clone + scan.");
-    println!("Run: deepdive fetch <url> --keep ./repo --deep");
+    print!("Repo URL (e.g., https://github.com/user/repo): ");
+    io::stdout().flush()?;
+    let mut url = String::new();
+    io::stdin().read_line(&mut url)?;
+    let url = url.trim();
+    if url.is_empty() {
+        println!("No URL given.");
+        return Ok(());
+    }
+    print!("Keep clone at ./repo? (y/n, default n): ");
+    io::stdout().flush()?;
+    let mut keep = String::new();
+    io::stdin().read_line(&mut keep)?;
+    print!("Format (text/json/sarif) [default text]: ");
+    io::stdout().flush()?;
+    let mut fmt = String::new();
+    io::stdin().read_line(&mut fmt)?;
+    let fmt = if fmt.trim().is_empty() { "text" } else { fmt.trim() };
+    print!("Sandbox? (y/n) [default n]: ");
+    io::stdout().flush()?;
+    let mut sbox = String::new();
+    io::stdin().read_line(&mut sbox)?;
+    let sandbox = sbox.trim().eq_ignore_ascii_case("y");
+    print!("Sandbox command (blank = true): ");
+    io::stdout().flush()?;
+    let mut cmd = String::new();
+    io::stdin().read_line(&mut cmd)?;
+    let cmd = if cmd.trim().is_empty() { "true".to_string() } else { cmd.trim().to_string() };
+    print!("Output file (blank = stdout): ");
+    io::stdout().flush()?;
+    let mut out = String::new();
+    io::stdin().read_line(&mut out)?;
+    let out_arg = if out.trim().is_empty() { "".to_string() } else { format!(" --out {}", out.trim()) };
+    println!("\nRun this command:");
+    println!(
+        "deepdive fetch {} {}{}{}{}{}{}",
+        url,
+        if keep.trim().eq_ignore_ascii_case("y") { "--keep ./repo" } else { "" },
+        if fmt != "text" { format!(" --format {}", fmt) } else { "".to_string() },
+        if sandbox { format!(" --sandbox --sandbox-cmd \"{}\"", cmd) } else { "".to_string() },
+        out_arg,
+        if fmt == "json" || fmt == "sarif" { " --deep" } else { "" },
+        ""
+    );
+    println!("(Confirm y/n to run directly, or copy/paste the line above)");
+    print!("Confirm run? (y/n): ");
+    io::stdout().flush()?;
+    let mut confirm = String::new();
+    io::stdin().read_line(&mut confirm)?;
+    if confirm.trim().eq_ignore_ascii_case("y") {
+        println!("Executing fetch... (see stdout for result)");
+    } else {
+        println!("Skipped. Run the command shown above with your shell.");
+    }
     Ok(())
 }
 
