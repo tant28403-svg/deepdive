@@ -6,7 +6,7 @@ deepdive is a cross-platform (Windows + Linux) CLI tool that combines static ana
 
 ## Status
 
-v1.0.0 is released. Post-1.0 work is landing incrementally:
+v1.2.0 is released. Post-1.0 work landed incrementally:
 
 - `v1.1` — recursive archives and symlink escapes, expanded file types, Windows artifacts (ADS/reparse points, `.lnk`, MSI, scheduled tasks, OLE macros), deeper binary triage.
 - `v1.2` — YARA and Sigma rules, SBOM export, lockfile integrity, dependency confusion, taint-aware AST.

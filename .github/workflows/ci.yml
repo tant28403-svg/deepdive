@@ -42,3 +42,17 @@ jobs:
         run: cargo install cargo-audit --locked --version 0.21
       - name: Run cargo-audit
         run: cargo audit
+
+  yara:
+    name: yara feature (ubuntu)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (yara)
+        run: cargo clippy --all-targets --features yara -- -D warnings
+      - name: test (yara)
+        run: cargo test --features yara
