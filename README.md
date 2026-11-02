@@ -74,7 +74,10 @@ deepdive sandbox selftest --backend auto
 ```
 
 Backends: `auto` (Docker when available, otherwise native), `native` (bubblewrap/firejail on
-Linux, Job Objects on Windows), `docker`, `none`. Policies: `strict`, `network-capture`,
+Linux, Job Objects on Windows), `docker`, `none`. A namespaces + seccomp + cgroup backend for
+Linux lives behind the `native-sandbox` cargo feature; build with
+`cargo build --features native-sandbox` once it has been validated on a Linux runner with
+unprivileged user namespaces. Policies: `strict`, `network-capture`,
 `permissive`, or a TOML file. The JSON report carries a `sandbox` object with the backend,
 policy, file diffs, network indicators, and — as the native backends land — process, syscall,
 registry, and memory-dump telemetry (`schema_version` 2.0).

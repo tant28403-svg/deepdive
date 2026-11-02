@@ -12,15 +12,18 @@ pub struct Completed {
 }
 
 /// Spawn a command, capture its output through temp files, and kill it once the
-/// deadline passes. `on_timeout` runs before the kill so callers can tear down
-/// containers or process groups.
-pub fn run_with_timeout<F>(
+/// deadline passes. `on_spawn` receives the child pid (for cgroup placement) and
+/// `on_timeout` runs before the kill so callers can tear down containers or
+/// process groups.
+pub fn run_with_timeout<F, G>(
     mut command: Command,
     timeout: Duration,
+    mut on_spawn: G,
     mut on_timeout: F,
 ) -> std::io::Result<Completed>
 where
     F: FnMut(&mut Child),
+    G: FnMut(u32),
 {
     let io_dir = tempfile::tempdir()?;
     let out_path = io_dir.path().join("stdout");
@@ -34,6 +37,7 @@ where
 
     let start = Instant::now();
     let mut child = command.spawn()?;
+    on_spawn(child.id());
     let mut timed_out = false;
 
     loop {

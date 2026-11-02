@@ -98,6 +98,7 @@ pub fn run_sandbox(
     let completed = process::run_with_timeout(
         docker,
         Duration::from_secs(policy.timeout_secs.max(1)),
+        |_pid| {},
         |_child| {
             let _ = Command::new("docker").args(["kill", &name]).output();
         },

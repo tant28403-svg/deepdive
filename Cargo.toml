@@ -57,8 +57,8 @@ owo-colors = "4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# HTTP (rustls = no OpenSSL dep)
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "blocking"] }
+# HTTP (rustls only: no OpenSSL/native-tls dependency)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "http2", "charset"] }
 
 # Git (pure Rust)
 gix = { version = "0.66", default-features = false, features = ["basic", "blocking-http-transport-reqwest-rust-tls"] }
@@ -91,6 +91,9 @@ default = ["git-backend-gix"]
 git-backend-gix = []
 git-backend-git2 = ["dep:git2"]
 yara = ["dep:yara-x"]
+# Native Linux sandbox (namespaces + seccomp + cgroups). Off by default until it
+# has been validated on a Linux runner with unprivileged user namespaces.
+native-sandbox = ["dep:nix", "dep:libc", "dep:seccompiler"]
 
 [dependencies.git2]
 version = "0.19"
@@ -114,6 +117,11 @@ features = [
 [[bin]]
 name = "deepdive"
 path = "src/main.rs"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+nix = { version = "0.29", features = ["sched", "mount", "fs", "user", "process", "signal"], optional = true }
+libc = { version = "0.2", optional = true }
+seccompiler = { version = "0.4", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58", features = [

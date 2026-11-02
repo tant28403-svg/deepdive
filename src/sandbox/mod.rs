@@ -1,5 +1,7 @@
 pub mod docker;
 pub mod error;
+#[cfg(all(target_os = "linux", feature = "native-sandbox"))]
+pub mod linux;
 #[cfg(target_os = "linux")]
 pub mod linux_native;
 pub mod policy;

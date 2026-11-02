@@ -27,6 +27,19 @@ pub fn run_native(
     cmd: &str,
     target: &Path,
 ) -> Result<SandboxReport, SandboxError> {
+    // Prefer the native namespaces backend when compiled in. If it cannot start
+    // (for example the kernel forbids unprivileged user namespaces), fall back
+    // to bubblewrap or firejail when one is installed.
+    #[cfg(feature = "native-sandbox")]
+    match crate::sandbox::linux::run(policy, cmd, target) {
+        Ok(report) => return Ok(report),
+        Err(native_err) => {
+            if !bwrap_available() && !firejail_available() {
+                return Err(native_err);
+            }
+        }
+    }
+
     let use_bwrap = bwrap_available();
     if !use_bwrap && !firejail_available() {
         return Err(SandboxError::Unavailable(
@@ -123,6 +136,7 @@ pub fn run_native(
     let completed = process::run_with_timeout(
         command,
         Duration::from_secs(policy.timeout_secs.max(1)),
+        |_pid| {},
         |_child| {},
     )?;
 
