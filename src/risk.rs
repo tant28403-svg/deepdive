@@ -16,13 +16,18 @@ pub fn score(findings: &[Finding]) -> u8 {
 }
 
 pub fn verdict(score: u8, findings: &[Finding]) -> Verdict {
-    if findings.iter().any(|f| f.severity == Severity::Critical) {
-        return Verdict::Unsafe;
+    let has_critical = findings.iter().any(|f| f.severity == Severity::Critical);
+
+    // BLOCK only with Critical findings (actual malware indicators)
+    if has_critical {
+        return Verdict::Block;
     }
+
+    // Without Critical, max verdict is Unsafe
     match score {
         0..=10 => Verdict::Safe,
         11..=40 => Verdict::Review,
         41..=70 => Verdict::Unsafe,
-        _ => Verdict::Block,
+        _ => Verdict::Unsafe, // High score but no Critical → Unsafe, not Block
     }
 }

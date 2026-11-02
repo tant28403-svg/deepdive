@@ -18,7 +18,7 @@ fn scan_clean_dir_is_safe() {
 }
 
 #[test]
-fn scan_secret_dir_is_unsafe() {
+fn scan_secret_dir_is_blocked() {
     let dir = TempDir::new().unwrap();
     std::fs::write(
         dir.path().join("a.js"),
@@ -29,7 +29,7 @@ fn scan_secret_dir_is_unsafe() {
         .args(["scan", dir.path().to_str().unwrap()])
         .assert()
         .code(2)
-        .stdout(predicate::str::contains("VERDICT: UNSAFE"));
+        .stdout(predicate::str::contains("VERDICT: BLOCK"));
 }
 
 #[test]
@@ -182,7 +182,7 @@ detection:
         .assert()
         .code(2)
         .stdout(predicate::str::contains("sigma.test-marker"))
-        .stdout(predicate::str::contains("VERDICT: UNSAFE"));
+        .stdout(predicate::str::contains("VERDICT: BLOCK"));
 }
 
 #[test]
