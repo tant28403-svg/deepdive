@@ -39,6 +39,12 @@ including `and`/`or`/`not`, `N of`, `all of`, wildcards, and common modifiers
 (`contains`, `startswith`, `endswith`, `re`, `all`). It is intended for dropped
 command-line/script artifacts, not event-log correlation.
 
+## Disassembly
+
+Build with `cargo build --release --features disasm` to decode PE/ELF executable sections
+with iced-x86 and flag indirect control flow (dynamic API resolution, obfuscation) and
+anti-analysis instructions (`disasm.anti-analysis`, `disasm.indirect-control-flow`).
+
 ## Dependency checks
 
 deepdive reads npm, pnpm, Yarn, Cargo, pip, Go, and Bundler metadata. In addition to

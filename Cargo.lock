@@ -919,6 +919,7 @@ dependencies = [
  "gix",
  "goblin",
  "hex",
+ "iced-x86",
  "ignore",
  "indicatif",
  "libc",
@@ -2473,6 +2474,15 @@ dependencies = [
  "tower-service",
  "tracing",
  "windows-registry",
+]
+
+[[package]]
+name = "iced-x86"
+version = "1.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c23ad4d19dca41180e835ef6fbd2c1ee655777eca086ad80dd517e0513322879"
+dependencies = [
+ "lazy_static",
 ]
 
 [[package]]

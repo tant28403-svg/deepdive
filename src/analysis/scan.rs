@@ -43,6 +43,8 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
         FileType::BinaryPe | FileType::BinaryElf | FileType::BinaryMachO => {
             if let Ok(bytes) = std::fs::read(path) {
                 findings.extend(crate::analysis::binary::scan(path, &bytes));
+                #[cfg(feature = "disasm")]
+                findings.extend(crate::analysis::disasm::scan(path, &bytes));
             }
         }
         FileType::Archive => {

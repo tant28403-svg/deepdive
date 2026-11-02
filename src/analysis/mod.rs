@@ -5,6 +5,8 @@ pub mod build;
 pub mod config;
 pub mod deobfuscate;
 pub mod deps;
+#[cfg(feature = "disasm")]
+pub mod disasm;
 pub mod document;
 pub mod file_type;
 pub mod git_history;

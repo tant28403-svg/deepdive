@@ -94,10 +94,18 @@ yara = ["dep:yara-x"]
 # Native Linux sandbox (namespaces + seccomp + cgroups). Off by default until it
 # has been validated on a Linux runner with unprivileged user namespaces.
 native-sandbox = ["dep:nix", "dep:libc", "dep:seccompiler"]
+# Disassembly and control-flow heuristics for PE/ELF.
+disasm = ["dep:iced-x86"]
 
 [dependencies.git2]
 version = "0.19"
 optional = true
+
+[dependencies.iced-x86]
+version = "1.21"
+optional = true
+default-features = false
+features = ["std", "decoder", "instr_info"]
 
 [dependencies.yara-x]
 version = "1.21"
