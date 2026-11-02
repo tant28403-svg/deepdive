@@ -46,6 +46,8 @@ pub fn run_native(
     };
 
     let before = snapshot::capture(target);
+    let processes_before = crate::sandbox::proctree::snapshot();
+    let registry_before = crate::sandbox::registry::capture_persistence();
 
     let job = unsafe { CreateJobObjectW(None, None) }.context("CreateJobObject")?;
 
@@ -132,6 +134,14 @@ pub fn run_native(
     report.stdout = std::fs::read_to_string(&out_path).unwrap_or_default();
     report.stderr = std::fs::read_to_string(&err_path).unwrap_or_default();
     drop(io_dir);
+
+    // Sample the process list while the job is still open so live children are
+    // visible, then tear the job down.
+    let processes_after = crate::sandbox::proctree::snapshot();
+    report.process_tree =
+        crate::sandbox::proctree::spawned_since(&processes_before, &processes_after);
+    let registry_after = crate::sandbox::registry::capture_persistence();
+    report.registry_changes = crate::sandbox::registry::diff(&registry_before, &registry_after);
 
     unsafe {
         let _ = CloseHandle(pi.hThread);

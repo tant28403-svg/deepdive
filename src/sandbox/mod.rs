@@ -9,6 +9,10 @@ pub mod snapshot;
 pub mod telemetry;
 
 #[cfg(windows)]
+pub mod proctree;
+#[cfg(windows)]
+pub mod registry;
+#[cfg(windows)]
 pub mod windows_native;
 
 pub use error::SandboxError;
