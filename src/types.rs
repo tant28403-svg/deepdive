@@ -87,6 +87,7 @@ pub struct SandboxReport {
     #[serde(default)]
     pub memory_dumps: Vec<crate::sandbox::telemetry::MemoryDump>,
 }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Verdict {
     Safe,
     Review,

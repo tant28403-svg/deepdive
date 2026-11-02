@@ -22,6 +22,9 @@ pub struct Options {
     pub sandbox_cmd: Option<String>,
     pub sandbox_backend: String,
     pub sandbox_policy: String,
+    pub intel: bool,
+    pub baseline: Option<PathBuf>,
+    pub regression: bool,
     pub max_size: u64,
     pub threads: Option<usize>,
     pub rules: Vec<PathBuf>,
@@ -42,6 +45,9 @@ impl Default for Options {
             sandbox_cmd: None,
             sandbox_backend: "auto".to_string(),
             sandbox_policy: "strict".to_string(),
+            intel: false,
+            baseline: None,
+            regression: false,
             max_size: 100,
             threads: None,
             rules: Vec::new(),
@@ -160,6 +166,25 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
         findings.extend(rule_findings);
     }
 
+    // Cached threat-intel URL/host matching.
+    if opts.intel {
+        let db = crate::analysis::intel::IntelDb::load();
+        if db.is_empty() {
+            eprintln!("[intel] no cached feed; run `deepdive cache update` while online");
+        } else {
+            let intel_findings: Vec<Finding> = files
+                .par_iter()
+                .zip(types.par_iter())
+                .filter(|(_, ft)| is_text_type(ft))
+                .flat_map(|(file, _)| {
+                    let content = scan::read_text(file);
+                    crate::analysis::intel::scan_text(file, &content, &db)
+                })
+                .collect();
+            findings.extend(intel_findings);
+        }
+    }
+
     // Git history (deep mode).
     if opts.deep && path.is_dir() {
         findings.extend(git_history::scan_git_history(path));
@@ -187,8 +212,50 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
     let project = ProjectConfig::load(path);
     let suppressed = project.apply(&mut findings);
 
+    // Baseline comparison against a previous JSON report.
+    let baseline_diff = match &opts.baseline {
+        Some(baseline_path) => {
+            let previous = crate::analysis::baseline::load(baseline_path)?;
+            Some(crate::analysis::baseline::compare(&findings, &previous))
+        }
+        None => None,
+    };
+    if let Some(diff) = &baseline_diff {
+        if !diff.new.is_empty() {
+            findings.push(Finding {
+                id: "baseline.new-findings".to_string(),
+                severity: Severity::Info,
+                confidence: 1.0,
+                rule: "baseline.new-findings".to_string(),
+                category: "baseline".to_string(),
+                location: crate::types::Location {
+                    path: path.to_string_lossy().to_string(),
+                    line: None,
+                    column: None,
+                },
+                message: format!(
+                    "{} new finding(s) compared with the baseline",
+                    diff.new.len()
+                ),
+                snippet: None,
+                tags: vec!["baseline".to_string()],
+            });
+        }
+    }
+
+    let regression_fail = opts.regression
+        && baseline_diff
+            .as_ref()
+            .and_then(|diff| diff.highest_new_severity())
+            .map(|severity| severity >= Severity::High)
+            .unwrap_or(false);
+
     let score = risk::score(&findings);
     let verdict = risk::verdict(score, &findings);
+    let mut exit = exit_code(opts, verdict, &findings);
+    if regression_fail {
+        exit = 2;
+    }
 
     // --min-severity filters presentation only; it never lowers the verdict.
     let min = Severity::parse(&min_severity);
@@ -209,7 +276,7 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
             _ => crate::reporting::sbom::cyclonedx(&dependencies, path),
         };
         write_output(&opts.out, &content)?;
-        return Ok(exit_code(opts, verdict, &findings));
+        return Ok(exit);
     }
     match opts.format.to_lowercase().as_str() {
         "json" => {
@@ -221,6 +288,11 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
                 "suppressed": suppressed,
                 "findings": reported,
                 "sandbox": sandbox_report,
+                "baseline": baseline_diff.as_ref().map(|diff| serde_json::json!({
+                    "new": diff.new.len(),
+                    "resolved": diff.resolved.len(),
+                    "new_findings": diff.new,
+                })),
             }))?;
             write_output(&opts.out, &content)?;
         }
@@ -274,13 +346,29 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
             if suppressed > 0 {
                 println!("Suppressed by .deepdive.toml: {}", suppressed);
             }
+            if let Some(diff) = &baseline_diff {
+                println!();
+                println!(
+                    "baseline: {} new, {} resolved",
+                    diff.new.len(),
+                    diff.resolved.len()
+                );
+                for finding in diff.new.iter().take(20) {
+                    println!(
+                        "  NEW [{}] {} - {}",
+                        finding.severity.as_str().to_uppercase(),
+                        finding.rule,
+                        finding.location.path
+                    );
+                }
+            }
             if let Some(report) = &sandbox_report {
                 print_sandbox_report(report);
             }
         }
     }
 
-    Ok(exit_code(opts, verdict, &findings))
+    Ok(exit)
 }
 
 fn exit_code(opts: &Options, verdict: Verdict, findings: &[Finding]) -> i32 {

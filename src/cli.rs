@@ -62,6 +62,15 @@ pub struct ScanArgs {
     /// Sandbox policy: strict, network-capture, permissive, or a TOML file.
     #[arg(long, default_value = "strict")]
     pub sandbox_policy: String,
+    /// Match extracted URLs/hosts against the cached intel feed.
+    #[arg(long)]
+    pub intel: bool,
+    /// Compare against a previous JSON report.
+    #[arg(long)]
+    pub baseline: Option<PathBuf>,
+    /// Exit 2 when the baseline comparison finds new high/critical findings.
+    #[arg(long)]
+    pub regression: bool,
 }
 
 impl From<&ScanArgs> for engine::Options {
@@ -82,6 +91,9 @@ impl From<&ScanArgs> for engine::Options {
             sbom: args.sbom.clone(),
             sandbox_backend: args.sandbox_backend.clone(),
             sandbox_policy: args.sandbox_policy.clone(),
+            intel: args.intel,
+            baseline: args.baseline.clone(),
+            regression: args.regression,
         }
     }
 }
@@ -158,8 +170,12 @@ pub enum RulesAction {
 
 #[derive(Subcommand, Debug)]
 pub enum CacheAction {
-    /// Create the cache directory and describe what is cached.
-    Update,
+    /// Create the cache directory, refresh the intel feed, and describe what is cached.
+    Update {
+        /// Do not fetch the intel feed; only report the current cache.
+        #[arg(long)]
+        offline: bool,
+    },
     /// Delete all cached data.
     Clear,
 }
@@ -461,9 +477,13 @@ fn run_cache(action: CacheAction) -> Result<()> {
 
     let dir = config::cache_dir().context("could not determine cache directory")?;
     match action {
-        CacheAction::Update => {
+        CacheAction::Update { offline } => {
             std::fs::create_dir_all(&dir)?;
             println!("cache directory: {}", dir.display());
+            match crate::analysis::intel::IntelDb::update(offline) {
+                Ok(count) => println!("intel feed: {} entries cached", count),
+                Err(err) => println!("intel feed: not updated ({})", err),
+            }
             println!(
                 "OSV query results are cached automatically; run an online scan to populate it."
             );

@@ -54,6 +54,19 @@ Optional analyzers, off by default:
 - `--features wasm` — flags WASI imports that grant filesystem or network access and
   dangerous `env` host functions.
 
+## Regression mode and threat intel
+
+```bash
+deepdive scan ./repo --format json --out baseline.json
+deepdive scan ./repo --baseline baseline.json --regression
+deepdive cache update          # refresh the cached URLhaus feed
+deepdive scan ./repo --intel   # match URLs/hosts in text files against the feed
+```
+
+Baseline comparison fingerprints findings by rule, path, and line, reports new and resolved
+findings, and exits 2 on new high/critical findings in `--regression` mode. Intel matching
+emits `intel.url-match` for URLs, hostnames, and raw IPs found in the cached feed.
+
 ## Dependency checks
 
 deepdive reads npm, pnpm, Yarn, Cargo, pip, Go, and Bundler metadata. In addition to
