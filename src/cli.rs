@@ -197,7 +197,7 @@ pub enum SandboxAction {
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
-Commands::Scan { path, opts } => {
+            Commands::Scan { path, opts } => {
                 let code = engine::execute(&path, &engine::Options::from(&opts))?;
                 std::process::exit(code);
             }

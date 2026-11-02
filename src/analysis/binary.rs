@@ -96,7 +96,6 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
             "GetAsyncKeyState",
             "CredEnumerate",
             "MiniDumpWriteDump",
-            "IsDebuggerPresent",
             "CheckRemoteDebuggerPresent",
             "URLDownloadToFile",
             "InternetReadFile",
@@ -167,14 +166,14 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
             }
         }
 
-        // Unsigned: check if any certificate directory entry.
+        // Unsigned: check if any certificate directory entry (Authenticode signature).
         let has_cert = pe
             .header
             .optional_header
             .map(|oh| {
                 oh.data_directories
                     .get_certificate_table()
-                    .map(|d| d.virtual_address != 0)
+                    .map(|d| d.virtual_address != 0 && d.size != 0)
                     .unwrap_or(false)
             })
             .unwrap_or(false);

@@ -154,7 +154,7 @@ fn rules() -> &'static [Rule] {
             ),
             (
                 "dangerous.fs-rmtree",
-                r"(?i)shutil\.rmtree|rmtree",
+                r"(?i)shutil\.rmtree|(?<![\w-])rmtree\b",
                 Severity::Medium,
                 "recursive delete",
             ),

@@ -15,9 +15,6 @@ categories = ["command-line-utilities", "development-tools"]
 clap = { version = "4", features = ["derive", "color"] }
 clap_complete = "4"
 
-# Async runtime
-tokio = { version = "1", features = ["full"] }
-
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -30,7 +27,6 @@ ignore = "0.4"
 
 # Regex
 regex = "1"
-fancy-regex = "0.13"
 
 # Binary parsing (ELF/PE/Mach-O)
 goblin = "0.8"
@@ -49,8 +45,7 @@ flate2 = "1"
 # Temp dirs
 tempfile = "3"
 
-# Progress / output
-indicatif = "0.17"
+# Output
 owo-colors = "4"
 
 # Logging
@@ -60,14 +55,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # HTTP (rustls only: no OpenSSL/native-tls dependency)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "http2", "charset"] }
 
-# Git (pure Rust)
-gix = { version = "0.66", default-features = false, features = ["basic", "blocking-http-transport-reqwest-rust-tls"] }
+# Git (pure Rust) - using system git CLI for now; gix feature available for pure-Rust backend
+gix = { version = "0.66", default-features = false, features = ["basic", "blocking-http-transport-reqwest-rust-tls"], optional = true }
 
 # Parallelism
 rayon = "1"
-
-# Cross-platform paths
-dunce = "1"
 
 # Error handling
 anyhow = "1"
@@ -87,8 +79,8 @@ predicates = "3"
 tempfile = "3"
 
 [features]
-default = ["git-backend-gix"]
-git-backend-gix = []
+default = []
+git-backend-gix = ["dep:gix"]
 git-backend-git2 = ["dep:git2"]
 yara = ["dep:yara-x"]
 # Native Linux sandbox (namespaces + seccomp + cgroups). Off by default until it
@@ -109,10 +101,6 @@ optional = true
 [dependencies.wasmparser]
 version = "0"
 optional = true
-
-[dependencies.dialoguer]
-version = "0.11"
-features = ["completion"]
 
 [dependencies.iced-x86]
 version = "1.21"

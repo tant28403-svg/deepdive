@@ -193,18 +193,27 @@ pub fn execute(path: &Path, opts: &Options) -> Result<i32> {
     // Opt-in sandbox execution.
     let mut sandbox_report: Option<crate::types::SandboxReport> = None;
     if opts.sandbox || opts.sandbox_cmd.is_some() {
-        let command = opts
-            .sandbox_cmd
-            .clone()
-            .unwrap_or_else(|| "true".to_string());
-        match build_sandbox_policy(opts).and_then(|policy| {
-            crate::sandbox::run(&policy, &command, path).map_err(|err| anyhow::anyhow!("{}", err))
-        }) {
-            Ok(report) => {
-                findings.extend(crate::sandbox::behavioral_findings(&report));
-                sandbox_report = Some(report);
+        if !path.is_dir() {
+            eprintln!("[sandbox] skipped: sandbox requires a directory target, not a file");
+        } else {
+            let command = opts.sandbox_cmd.clone().unwrap_or_else(|| {
+                // Platform-appropriate no-op command
+                if cfg!(windows) {
+                    "cmd /c exit 0".to_string()
+                } else {
+                    "true".to_string()
+                }
+            });
+            match build_sandbox_policy(opts).and_then(|policy| {
+                crate::sandbox::run(&policy, &command, path)
+                    .map_err(|err| anyhow::anyhow!("{}", err))
+            }) {
+                Ok(report) => {
+                    findings.extend(crate::sandbox::behavioral_findings(&report));
+                    sandbox_report = Some(report);
+                }
+                Err(err) => eprintln!("[sandbox] failed: {}", err),
             }
-            Err(err) => eprintln!("[sandbox] failed: {}", err),
         }
     }
 

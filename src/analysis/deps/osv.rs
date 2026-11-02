@@ -130,6 +130,36 @@ fn typosquat_findings(deps: &[Dependency]) -> Vec<Finding> {
         "requests", "numpy", "flask", "django", "pandas", "scipy", "boto3", "urllib3",
     ];
 
+    // Legitimate packages that happen to be close to popular ones.
+    // These are well-known crates/packages that should never be flagged.
+    let cargo_allowlist = [
+        "slab",          // close to "clap" but totally legitimate
+        "serdect",       // legitimate crate
+        "tap",           // legitimate crate
+        "clru",          // close to "clap" but legitimate (LRU cache)
+        "addr2line",     // legitimate
+        "object",        // legitimate
+        "goblin",        // legitimate
+        "nom",           // legitimate
+        "syn",           // legitimate
+        "quote",         // legitimate
+        "proc-macro2",   // legitimate
+        "unicode-ident", // legitimate
+        "memchr",        // legitimate
+        "itoa",          // legitimate
+        "ryu",           // legitimate
+        "hashbrown",     // legitimate
+        "indexmap",      // legitimate
+        "bitflags",      // legitimate
+        "strum",         // legitimate
+        "num-traits",    // legitimate
+        "num-integer",   // legitimate
+        "num-derive",    // legitimate
+        "uuid",          // legitimate
+        "chrono",        // legitimate
+        "time",          // legitimate
+    ];
+
     for dep in deps {
         let top = match dep.ecosystem.as_str() {
             "npm" => &npm_top[..],
@@ -137,12 +167,18 @@ fn typosquat_findings(deps: &[Dependency]) -> Vec<Finding> {
             "pypi" => &pypi_top[..],
             _ => continue,
         };
+        // Skip if this is a known legitimate package that's close to a popular one
+        if dep.ecosystem == "cargo" && cargo_allowlist.iter().any(|&a| a == dep.name) {
+            continue;
+        }
         for &popular in top {
             if dep.name == popular {
                 continue;
             }
             let d = edit_distance(&dep.name, popular);
-            if d == 1 || d == 2 {
+            // Only flag exact typosquatting candidates: distance 1 (single char typo)
+            // Distance 2 produces too many false positives for legitimate short names
+            if d == 1 {
                 out.push(Finding {
                     id: format!("deps.typosquat-{}-{}", dep.ecosystem, dep.name),
                     severity: Severity::High,
