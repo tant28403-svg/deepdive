@@ -100,8 +100,6 @@ impl From<&ScanArgs> for engine::Options {
 
 #[derive(Subcommand, Debug)]
 pub enum Commands {
-    /// Interactive guided mode (menu prompts).
-    Interactive,
     /// Scan a local file or directory.
     /// Scan a local file or directory.
     Scan {
@@ -199,11 +197,7 @@ pub enum SandboxAction {
 impl Cli {
     pub fn run(self) -> Result<()> {
         match self.command {
-            Commands::Interactive => {
-                crate::interactive::run()?;
-                Ok(())
-            }
-            Commands::Scan { path, opts } => {
+Commands::Scan { path, opts } => {
                 let code = engine::execute(&path, &engine::Options::from(&opts))?;
                 std::process::exit(code);
             }

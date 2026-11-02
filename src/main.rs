@@ -1,7 +1,6 @@
 mod acquisition;
 mod analysis;
 mod cli;
-mod interactive;
 mod config;
 mod engine;
 mod reporting;
