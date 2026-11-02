@@ -5,7 +5,7 @@
 //! to bubblewrap/firejail.
 
 use caps::{
-    CapSet, CapSet::Effective as CapEffective, CapSet::Inheritable as CapInheritable,
+    CapSet::Effective as CapEffective, CapSet::Inheritable as CapInheritable,
     CapSet::Permitted as CapPermitted, Capability,
 };
 use nix::mount::{mount, umount2, MntFlags, MsFlags};
