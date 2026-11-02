@@ -91,6 +91,8 @@ pub fn load_rules_file(path: &Path) -> Vec<Rule> {
 /// Rule ids implemented natively by the built-in detectors.
 pub fn builtin_rule_ids() -> &'static [&'static str] {
     &[
+        "ast.js-tainted-sink",
+        "ast.py-tainted-sink",
         "dangerous.exec-eval",
         "dangerous.child-process",
         "dangerous.exec-call",

@@ -356,3 +356,18 @@ fn lockfile_integrity_is_reported() {
         .stdout(predicate::str::contains("deps.insecure-resolution"))
         .stdout(predicate::str::contains("deps.manifest-drift"));
 }
+
+#[test]
+fn tainted_ast_flow_is_reported() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(
+        dir.path().join("app.js"),
+        "const cmd = process.argv[2];\neval(cmd);\n",
+    )
+    .unwrap();
+    deepdive()
+        .args(["scan", dir.path().to_str().unwrap(), "--offline"])
+        .assert()
+        .failure()
+        .stdout(predicate::str::contains("ast.javascript-tainted-sink"));
+}

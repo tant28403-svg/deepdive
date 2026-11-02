@@ -50,6 +50,16 @@ OSV advisories and typosquatting, it flags:
 These checks are static and offline. Upstream hash verification against registry APIs is
 planned for a later release.
 
+## Taint analysis
+
+For JavaScript, TypeScript, and Python, deepdive performs a lightweight taint pass over
+the syntax tree. It marks common user-controlled sources (`process.argv`, `process.env`,
+`req.query`, `location.search`, `sys.argv`, `os.environ`, `request.form`, `input()`, ...)
+and reports when that data reaches a sink such as `eval`, `Function`, `child_process`,
+`os.system`, `subprocess`, `pickle.loads`, `yaml.load`, or SQL `.execute`/`.query`.
+Taint propagates through simple assignments. This is intentionally conservative, not a
+full data-flow engine.
+
 ## Install
 
 ### From source (clone from GitHub)
