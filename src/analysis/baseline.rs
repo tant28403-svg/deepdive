@@ -116,4 +116,36 @@ mod tests {
         let findings = vec![finding("secrets.key", "/repo/a.js", Severity::Low)];
         assert!(compare(&findings, &findings).is_empty());
     }
+
+    #[test]
+    fn loads_a_v1_report_without_new_fields() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("v1.json");
+        std::fs::write(
+            &path,
+            r#"{
+  "files_scanned": 1,
+  "risk_score": 11,
+  "verdict": "REVIEW",
+  "suppressed": 0,
+  "findings": [
+    {
+      "id": "dangerous.exec-eval-a.js",
+      "severity": "High",
+      "confidence": 0.9,
+      "rule": "dangerous.exec-eval",
+      "category": "dangerous",
+      "location": { "path": "a.js", "line": 1, "column": null },
+      "message": "eval",
+      "snippet": null,
+      "tags": []
+    }
+  ]
+}"#,
+        )
+        .unwrap();
+        let findings = load(&path).unwrap();
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule, "dangerous.exec-eval");
+    }
 }
