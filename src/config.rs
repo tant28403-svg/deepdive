@@ -87,7 +87,7 @@ impl ProjectConfig {
             if disabled {
                 return false;
             }
-            let allowed = self.allow.iter().any(|rule| {
+            let allowed = self.allow.iter().find(|rule| {
                 let rule_ok = rule
                     .rule
                     .as_deref()
@@ -100,7 +100,18 @@ impl ProjectConfig {
                     .unwrap_or(true);
                 rule_ok && path_ok
             });
-            !allowed
+            if let Some(rule) = allowed {
+                if let Some(reason) = &rule.reason {
+                    tracing::debug!(
+                        rule = %finding.rule,
+                        path = %finding.location.path,
+                        %reason,
+                        "allowlisted finding"
+                    );
+                }
+                return false;
+            }
+            true
         });
         before - findings.len()
     }

@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod acquisition;
 mod analysis;
 mod cli;

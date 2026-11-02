@@ -10,7 +10,6 @@ pub mod file_type;
 pub mod git_history;
 pub mod obfuscation;
 pub mod polyglot;
-pub mod router;
 pub mod rules;
 pub mod scan;
 pub mod secrets;
