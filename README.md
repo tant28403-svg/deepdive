@@ -24,21 +24,21 @@ analyzers, scores findings (0-100), and prints a verdict (`SAFE` / `REVIEW` /
 
 ## Key flags
 
-| Flag | Purpose |
-|---|---|
-| `--format text\|json\|sarif` | Report format |
-| `--out file` | Write instead of stdout |
-| `--deep` | Git history + dependency audit |
-| `--sandbox` | Run target in a sandbox |
-| `--sandbox-cmd "..."` | Your command (never invented by the tool) |
-| `--sandbox-backend auto\|native\|docker\|none` | Which isolation to use |
-| `--sandbox-policy strict\|network-capture\|permissive` | Isolation strictness |
-| `--offline` | Skip network (use cached OSV/intel) |
-| `--rules file.toml\|.yml\|.yar` | Custom rules |
-| `--min-severity info` | Hidden from output only; verdict uses all |
-| `--fail-on high` | Exit 2 if finding reaches this |
-| `--baseline prev.json --regression` | Compare to prior report; exit 2 on new high/critical |
-| `--intelligence` (future) / `--intel` (current) | Match URLs/hosts to cached threat feed |
+| Flag                                                   | Purpose                                              |
+| ------------------------------------------------------ | ---------------------------------------------------- |
+| `--format text\|json\|sarif`                           | Report format                                        |
+| `--out file`                                           | Write instead of stdout                              |
+| `--deep`                                               | Git history + dependency audit                       |
+| `--sandbox`                                            | Run target in a sandbox                              |
+| `--sandbox-cmd "..."`                                  | Your command (never invented by the tool)            |
+| `--sandbox-backend auto\|native\|docker\|none`         | Which isolation to use                               |
+| `--sandbox-policy strict\|network-capture\|permissive` | Isolation strictness                                 |
+| `--offline`                                            | Skip network (use cached OSV/intel)                  |
+| `--rules file.toml\|.yml\|.yar`                        | Custom rules                                         |
+| `--min-severity info`                                  | Hidden from output only; verdict uses all            |
+| `--fail-on high`                                       | Exit 2 if finding reaches this                       |
+| `--baseline prev.json --regression`                    | Compare to prior report; exit 2 on new high/critical |
+| `--intelligence` (future) / `--intel` (current)        | Match URLs/hosts to cached threat feed               |
 
 ## Sandbox (v2)
 
@@ -67,18 +67,6 @@ cargo build --release --features disasm,java,wasm   # full analyzers
 # or just cargo build for the default set
 sudo install -m 755 target/release/deepdive /usr/local/bin/
 ```
-
-# 1. Scan a file/dir
-# 2. Deep audit (git + sandbox)
-# 3. Fetch remote repo
-# 4. Rules / cache
-# 5. Sandbox selftest
-# 6. Cache update/clear
-# 7. Exit
-```
-
-It prompts for path, format (`text`/`json`/`sarif`), sandbox (`y`/`n`), command, and output file, then prints the exact command it would run.
-
 
 Quick direct command (same result, faster):
 
