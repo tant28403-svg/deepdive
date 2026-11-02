@@ -101,6 +101,12 @@ deepdive interactive
 
 The result is saved to `report.json` (or stdout if left blank) with `schema_version` 2.0, `verdict`, `findings`, and `sandbox` telemetry included. You can also copy the printed command and run it directly in your shell.
 
+Quick direct command (same result, faster):
+
+```bash
+deepdive scan ./repo --format json --offline --deep --sandbox --out report.json
+```
+
 ### If `deepdive` command not found after install
 
 ```bash
