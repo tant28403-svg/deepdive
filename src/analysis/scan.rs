@@ -99,6 +99,7 @@ pub fn scan_file(path: &Path, content: &str) -> Vec<Finding> {
     // Polyglot carving: scan embedded payloads.
     if let Ok(bytes) = std::fs::read(path) {
         findings.extend(crate::analysis::polyglot::scan_carved(path, &bytes));
+        findings.extend(crate::analysis::firmware::scan(path, &bytes));
     }
     findings
 }

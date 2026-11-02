@@ -14,6 +14,7 @@ pub mod document;
 #[cfg(feature = "dotnet")]
 pub mod dotnet;
 pub mod file_type;
+pub mod firmware;
 pub mod git_history;
 pub mod intel;
 #[cfg(feature = "java")]
