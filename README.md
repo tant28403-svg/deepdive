@@ -68,12 +68,6 @@ cargo build --release --features disasm,java,wasm   # full analyzers
 sudo install -m 755 target/release/deepdive /usr/local/bin/
 ```
 
-### Interactive guided mode
-
-If you prefer menus over flags:
-
-```bash
-deepdive interactive
 # 1. Scan a file/dir
 # 2. Deep audit (git + sandbox)
 # 3. Fetch remote repo
