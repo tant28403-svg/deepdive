@@ -1,6 +1,7 @@
 use crate::sandbox::policy::{NetworkPolicy, SandboxPolicy};
 use crate::sandbox::process;
-use crate::sandbox::{snapshot, SandboxError};
+use crate::sandbox::snapshot;
+use crate::sandbox::{CaptureContext, SandboxError};
 use crate::types::SandboxReport;
 use std::path::Path;
 use std::process::Command;
@@ -18,6 +19,7 @@ pub fn run_sandbox(
     policy: &SandboxPolicy,
     cmd: &str,
     target: &Path,
+    capture: Option<&CaptureContext>,
 ) -> Result<SandboxReport, SandboxError> {
     if !docker_available() {
         return Err(SandboxError::Unavailable(
@@ -35,8 +37,9 @@ pub fn run_sandbox(
         policy: policy.clone(),
         ..Default::default()
     };
-    if policy.network == NetworkPolicy::Capture {
-        // The capture proxy lands in stage 20; be explicit that it is not active.
+    if policy.network == NetworkPolicy::Capture && capture.is_some() {
+        // The proxy is reachable from the container, but DNS cannot be pointed
+        // at the host resolver through `docker run`.
         report.telemetry_degraded = true;
     }
 
@@ -56,8 +59,8 @@ pub fn run_sandbox(
         .arg(&name)
         .arg("--network")
         .arg(match policy.network {
-            NetworkPolicy::None | NetworkPolicy::Capture => "none",
-            NetworkPolicy::Allow => "bridge",
+            NetworkPolicy::None => "none",
+            NetworkPolicy::Capture | NetworkPolicy::Allow => "bridge",
         })
         .arg("--memory")
         .arg(format!("{}m", policy.memory_mb))
@@ -73,6 +76,25 @@ pub fn run_sandbox(
     if policy.read_only_root {
         docker.arg("--read-only");
         docker.arg("--tmpfs").arg("/tmp");
+    }
+
+    if let Some(context) = capture {
+        let proxy = context
+            .proxy_url
+            .replace("127.0.0.1", "host.docker.internal");
+        docker
+            .arg("--add-host")
+            .arg("host.docker.internal:host-gateway");
+        for variable in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "ALL_PROXY",
+        ] {
+            docker.arg("-e").arg(format!("{}={}", variable, proxy));
+        }
+        docker.arg("-e").arg("NO_PROXY=localhost,127.0.0.1,::1");
     }
 
     for path in &policy.writable {

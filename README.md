@@ -89,7 +89,10 @@ deepdive sandbox selftest --backend auto
 ```
 
 Backends: `auto` (Docker when available, otherwise native), `native` (bubblewrap/firejail on
-Linux, Job Objects on Windows), `docker`, `none`. A namespaces + seccomp + cgroup backend for
+Linux, Job Objects on Windows), `docker`, `none`. The `network-capture` policy starts a local
+HTTP/CONNECT proxy and fake DNS resolver, points the sandboxed process at them, and reports
+per-host traffic plus `sandbox.network.*` findings (raw IPs, uncommon ports, DGA-style names,
+DNS tunnelling, beaconing). A namespaces + seccomp + cgroup backend for
 Linux lives behind the `native-sandbox` cargo feature; build with
 `cargo build --features native-sandbox` once it has been validated on a Linux runner with
 unprivileged user namespaces. Policies: `strict`, `network-capture`,

@@ -11,7 +11,12 @@ use std::io::Error;
 use std::path::Path;
 
 /// Enter the namespaces, build the new root, and drop privileges.
-pub fn enter(target: &Path, root: &Path, unshare_net: bool) -> Result<(), Error> {
+pub fn enter(
+    target: &Path,
+    root: &Path,
+    unshare_net: bool,
+    resolv: Option<&Path>,
+) -> Result<(), Error> {
     let mut flags = CloneFlags::CLONE_NEWUSER
         | CloneFlags::CLONE_NEWNS
         | CloneFlags::CLONE_NEWPID
@@ -26,7 +31,7 @@ pub fn enter(target: &Path, root: &Path, unshare_net: bool) -> Result<(), Error>
     setgid(nix::unistd::Gid::from_raw(0)).map_err(io_err)?;
     setuid(Uid::from_raw(0)).map_err(io_err)?;
 
-    setup_root(target, root)?;
+    setup_root(target, root, resolv)?;
 
     Ok(())
 }
@@ -43,7 +48,7 @@ fn map_ids() -> Result<(), Error> {
 }
 
 /// Build a minimal root at `root` and pivot into it.
-fn setup_root(target: &Path, root: &Path) -> Result<(), Error> {
+fn setup_root(target: &Path, root: &Path, resolv: Option<&Path>) -> Result<(), Error> {
     // Stop mount events escaping into the host namespace.
     mount(
         None::<&str>,
@@ -92,6 +97,20 @@ fn setup_root(target: &Path, root: &Path) -> Result<(), Error> {
             None::<&str>,
         )
         .map_err(io_err)?;
+    }
+
+    if let Some(resolv) = resolv {
+        let target = root.join("etc/resolv.conf");
+        if target.exists() {
+            mount(
+                Some(resolv),
+                &target,
+                None::<&str>,
+                MsFlags::MS_BIND,
+                None::<&str>,
+            )
+            .map_err(io_err)?;
+        }
     }
 
     if Path::new("/dev").exists() {

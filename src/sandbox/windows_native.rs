@@ -3,7 +3,7 @@ use crate::sandbox::policy::SandboxPolicy;
 #[cfg(windows)]
 use crate::sandbox::snapshot;
 #[cfg(windows)]
-use crate::sandbox::SandboxError;
+use crate::sandbox::{CaptureContext, SandboxError};
 #[cfg(windows)]
 use crate::types::SandboxReport;
 #[cfg(windows)]
@@ -26,7 +26,8 @@ use windows::Win32::System::JobObjects::{
 };
 #[cfg(windows)]
 use windows::Win32::System::Threading::{
-    CreateProcessW, ResumeThread, CREATE_SUSPENDED, PROCESS_INFORMATION, STARTUPINFOW,
+    CreateProcessW, ResumeThread, CREATE_SUSPENDED, CREATE_UNICODE_ENVIRONMENT,
+    PROCESS_INFORMATION, STARTUPINFOW,
 };
 
 #[cfg(windows)]
@@ -34,6 +35,7 @@ pub fn run_native(
     policy: &SandboxPolicy,
     cmd: &str,
     target: &Path,
+    capture: Option<&CaptureContext>,
 ) -> Result<SandboxReport, SandboxError> {
     let mut report = SandboxReport {
         command: cmd.to_string(),
@@ -82,6 +84,7 @@ pub fn run_native(
     let (full_cmd, io_dir, out_path, err_path) = full_cmd;
     let cwd_wide: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
     let mut cmd_wide: Vec<u16> = OsStr::new(&full_cmd).encode_wide().chain(Some(0)).collect();
+    let mut environment = environment_block(policy, capture);
 
     let si = STARTUPINFOW {
         cb: std::mem::size_of::<STARTUPINFOW>() as u32,
@@ -97,8 +100,8 @@ pub fn run_native(
             None,
             None,
             false,
-            CREATE_SUSPENDED,
-            None,
+            CREATE_SUSPENDED | CREATE_UNICODE_ENVIRONMENT,
+            Some(environment.as_mut_ptr() as *const core::ffi::c_void),
             windows::core::PCWSTR(cwd_wide.as_ptr()),
             &si,
             &mut pi,
@@ -169,4 +172,62 @@ pub fn run_native(
     }
 
     Ok(report)
+}
+
+/// Build a UTF-16 environment block. When scrubbing, only the variables a
+/// shell and toolchain need are kept; capture proxy variables are always added.
+#[cfg(windows)]
+fn environment_block(policy: &SandboxPolicy, capture: Option<&CaptureContext>) -> Vec<u16> {
+    const ALWAYS_KEEP: &[&str] = &[
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "PATH",
+        "PATHEXT",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "HOMEDRIVE",
+        "HOMEPATH",
+        "COMSPEC",
+        "NUMBER_OF_PROCESSORS",
+        "OS",
+        "PROCESSOR_ARCHITECTURE",
+    ];
+
+    let mut vars: Vec<(String, String)> = std::env::vars()
+        .filter(|(key, _)| {
+            !policy.env_scrub
+                || ALWAYS_KEEP
+                    .iter()
+                    .any(|keep| key.eq_ignore_ascii_case(keep))
+        })
+        .filter(|(key, _)| !key.to_ascii_uppercase().ends_with("_PROXY"))
+        .collect();
+
+    if let Some(context) = capture {
+        for name in [
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "ALL_PROXY",
+        ] {
+            vars.push((name.to_string(), context.proxy_url.clone()));
+        }
+        vars.push((
+            "NO_PROXY".to_string(),
+            "localhost,127.0.0.1,::1".to_string(),
+        ));
+    }
+
+    let mut block = Vec::new();
+    for (key, value) in vars {
+        for unit in format!("{}={}", key, value).encode_utf16() {
+            block.push(unit);
+        }
+        block.push(0);
+    }
+    block.push(0);
+    block
 }

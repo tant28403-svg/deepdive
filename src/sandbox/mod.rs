@@ -4,6 +4,7 @@ pub mod error;
 pub mod linux;
 #[cfg(target_os = "linux")]
 pub mod linux_native;
+pub mod network;
 pub mod policy;
 pub mod process;
 pub mod selftest;
@@ -18,11 +19,22 @@ pub mod registry;
 pub mod windows_native;
 
 pub use error::SandboxError;
-pub use policy::{Backend, SandboxPolicy};
+pub use policy::{Backend, NetworkPolicy, SandboxPolicy};
 pub use selftest::CheckState;
 
 use crate::types::{Finding, Location, SandboxReport, Severity};
+use std::net::SocketAddr;
 use std::path::Path;
+
+/// Endpoints the backends should point the sandboxed process at.
+#[derive(Debug, Clone)]
+pub struct CaptureContext {
+    pub proxy_url: String,
+    /// Used by the Linux backends to point `/etc/resolv.conf` at the fake
+    /// resolver; Windows has no reliable per-process resolver override yet.
+    #[allow(dead_code)]
+    pub dns_addr: Option<SocketAddr>,
+}
 
 /// Pick a backend according to `policy` and run `cmd` against `target`.
 pub fn run(
@@ -30,11 +42,28 @@ pub fn run(
     cmd: &str,
     target: &Path,
 ) -> Result<SandboxReport, SandboxError> {
-    match resolve_backend(policy.backend)? {
-        Backend::Docker => docker::run_sandbox(policy, cmd, target),
-        Backend::Native => run_native(policy, cmd, target),
+    let capture = if policy.network == NetworkPolicy::Capture {
+        Some(network::Capture::start().map_err(SandboxError::Io)?)
+    } else {
+        None
+    };
+    let context = capture.as_ref().map(|capture| CaptureContext {
+        proxy_url: capture.proxy_url(),
+        dns_addr: Some(capture.dns_addr()),
+    });
+
+    let result = match resolve_backend(policy.backend)? {
+        Backend::Docker => docker::run_sandbox(policy, cmd, target, context.as_ref()),
+        Backend::Native => run_native(policy, cmd, target, context.as_ref()),
         Backend::Auto | Backend::None => unreachable!("resolve_backend never returns these"),
+    };
+
+    let mut report = result?;
+    if let Some(capture) = &capture {
+        report.network_events = capture.events();
+        capture.stop();
     }
+    Ok(report)
 }
 
 fn resolve_backend(requested: Backend) -> Result<Backend, SandboxError> {
@@ -101,18 +130,19 @@ fn run_native(
     policy: &SandboxPolicy,
     cmd: &str,
     target: &Path,
+    capture: Option<&CaptureContext>,
 ) -> Result<SandboxReport, SandboxError> {
     #[cfg(windows)]
     {
-        windows_native::run_native(policy, cmd, target)
+        windows_native::run_native(policy, cmd, target, capture)
     }
     #[cfg(target_os = "linux")]
     {
-        linux_native::run_native(policy, cmd, target)
+        linux_native::run_native(policy, cmd, target, capture)
     }
     #[cfg(not(any(windows, target_os = "linux")))]
     {
-        let _ = (policy, cmd, target);
+        let _ = (policy, cmd, target, capture);
         Err(SandboxError::Unsupported(
             "native sandbox is only implemented for Windows and Linux".to_string(),
         ))
@@ -168,13 +198,14 @@ pub fn behavioral_findings(report: &SandboxReport) -> Vec<Finding> {
         ));
     }
     if !report.network_events.is_empty() {
+        out.extend(network::beacon::analyze(&report.network_events));
         out.push(finding(
             "sandbox.network-event",
-            Severity::High,
-            0.85,
+            Severity::Info,
+            0.9,
             target,
             format!(
-                "Sandbox recorded {} network event(s)",
+                "Sandbox captured {} network event(s)",
                 report.network_events.len()
             ),
         ));

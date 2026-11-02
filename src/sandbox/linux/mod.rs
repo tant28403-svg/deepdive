@@ -7,7 +7,8 @@ pub mod seccomp;
 
 use crate::sandbox::policy::{NetworkPolicy, SandboxPolicy};
 use crate::sandbox::process;
-use crate::sandbox::{snapshot, SandboxError};
+use crate::sandbox::snapshot;
+use crate::sandbox::{CaptureContext, SandboxError};
 use crate::types::SandboxReport;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -19,11 +20,27 @@ pub fn run(
     policy: &SandboxPolicy,
     cmd: &str,
     target: &Path,
+    capture: Option<&CaptureContext>,
 ) -> Result<SandboxReport, SandboxError> {
     let root = tempfile::tempdir().map_err(SandboxError::Io)?;
     let root_path = root.path().to_path_buf();
     let target_owned = target.to_path_buf();
-    let unshare_net = policy.network != NetworkPolicy::Allow;
+    let unshare_net = policy.network == NetworkPolicy::None;
+
+    // Point the sandbox resolver at the capture DNS service when active.
+    let resolv = if policy.network == NetworkPolicy::Capture {
+        capture
+            .and_then(|context| context.dns_addr)
+            .and_then(|addr| {
+                tempfile::NamedTempFile::new().ok().map(|file| {
+                    let _ = std::fs::write(file.path(), format!("nameserver {}\n", addr.ip()));
+                    file
+                })
+            })
+    } else {
+        None
+    };
+    let resolv_path = resolv.as_ref().map(|file| file.path().to_path_buf());
 
     let cgroup = cgroups::create(policy).map(Rc::new);
 
@@ -34,17 +51,26 @@ pub fn run(
         policy: policy.clone(),
         ..Default::default()
     };
-    if policy.network == NetworkPolicy::Capture {
-        report.telemetry_degraded = true;
-    }
-
     let before = snapshot::capture(target);
 
     let mut command = Command::new("sh");
     command.arg("-c").arg(cmd);
+    if let Some(context) = capture {
+        command.env("HTTP_PROXY", &context.proxy_url);
+        command.env("HTTPS_PROXY", &context.proxy_url);
+        command.env("http_proxy", &context.proxy_url);
+        command.env("https_proxy", &context.proxy_url);
+        command.env("ALL_PROXY", &context.proxy_url);
+        command.env("NO_PROXY", "localhost,127.0.0.1,::1");
+    }
     unsafe {
         command.pre_exec(move || {
-            namespaces::enter(&target_owned, &root_path, unshare_net)?;
+            namespaces::enter(
+                &target_owned,
+                &root_path,
+                unshare_net,
+                resolv_path.as_deref(),
+            )?;
             seccomp::apply().map_err(|err| std::io::Error::other(err.to_string()))?;
             Ok(())
         });
