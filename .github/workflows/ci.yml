@@ -56,3 +56,32 @@ jobs:
         run: cargo clippy --all-targets --features yara -- -D warnings
       - name: test (yara)
         run: cargo test --features yara
+
+  features:
+    name: optional features (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: clippy (features)
+        run: cargo clippy --all-targets --features android,disasm,dotnet,java,wasm -- -D warnings
+      - name: test (features)
+        run: cargo test --features android,disasm,dotnet,java,wasm
+
+  native-sandbox:
+    name: native-sandbox (ubuntu, experimental)
+    runs-on: ubuntu-latest
+    # Non-blocking until the backend is validated on a Linux runner.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: check (native-sandbox)
+        run: cargo check --features native-sandbox

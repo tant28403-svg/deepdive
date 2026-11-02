@@ -6,14 +6,18 @@ deepdive is a cross-platform (Windows + Linux) CLI tool that combines static ana
 
 ## Status
 
-v1.2.0 is released. Post-1.0 work landed incrementally:
+v2.0.0 is released. Work landed incrementally:
 
 - `v1.1` — recursive archives and symlink escapes, expanded file types, Windows artifacts (ADS/reparse points, `.lnk`, MSI, scheduled tasks, OLE macros), deeper binary triage.
 - `v1.2` — YARA and Sigma rules, SBOM export, lockfile integrity, dependency confusion, taint-aware AST.
-- `v2.0` (in progress) — sandbox foundation: typed policy/backends, structured telemetry in the
-  JSON report, enforced timeouts, and `deepdive sandbox selftest`. Native Linux namespaces and
-  Windows AppContainer/ETW land in later stages.
-- Deferred to `v2` — syscall tracing, network capture, memory dumps, anti-analysis multi-run, disassembly/CFG, .NET/Java/Android/WASM, ML/ONNX, firmware.
+- `v2.0` — sandbox foundation (typed policy/backends, structured telemetry in the JSON report,
+  enforced timeouts, `deepdive sandbox selftest`), network capture (HTTP/CONNECT proxy, fake DNS,
+  beacon/DGA analysis), Windows process monitor with registry diffs and executable memory dumps,
+  disassembly heuristics (`disasm`), Java/WASM/Android/.NET analyzers, baseline/regression mode,
+  cached URLhaus intel matching, and firmware image carving.
+- Still open — Windows AppContainer/restricted-token confinement and ETW syscall telemetry,
+  validating the `native-sandbox` Linux backend as the default, anti-analysis multi-run,
+  the ONNX classifier, and the plugin system. Tracked in the plan's status appendix.
 
 See the plan in `~/.opencode/plan/deepdive-plan.md`.
 
