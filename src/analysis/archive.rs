@@ -222,7 +222,10 @@ fn scan_zip(path: &Path, bytes: &[u8], depth: usize, budget: &mut Budget, out: &
         let Ok(mut entry) = zip.by_index(i) else {
             continue;
         };
-        let name = entry.name().to_string();
+        let Ok(name) = entry.name() else {
+            continue;
+        };
+        let name = name.to_string();
         if name.ends_with('/') || entry.is_dir() {
             continue;
         }

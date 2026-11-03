@@ -180,9 +180,12 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
         if let Ok(mut zip) = zip::ZipArchive::new(std::io::Cursor::new(bytes)) {
             // Check for VBA macros.
             let has_vba = (0..zip.len()).any(|i| {
-                zip.by_index(i)
-                    .map(|e| e.name().to_lowercase().contains("vbaproject.bin"))
-                    .unwrap_or(false)
+                if let Ok(e) = zip.by_index(i) {
+                    if let Ok(name) = e.name() {
+                        return name.to_lowercase().contains("vbaproject.bin");
+                    }
+                }
+                false
             });
             if has_vba {
                 out.push(Finding {
@@ -204,7 +207,8 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
             // External links / template injection.
             for i in 0..zip.len() {
                 if let Ok(e) = zip.by_index(i) {
-                    let n = e.name().to_lowercase();
+                    let Ok(name) = e.name() else { continue };
+                    let n = name.to_lowercase();
                     if n.contains("externallink") || n.contains("attachedtemplate") {
                         out.push(Finding {
                             id: format!("doc.office-external-{}-{}", path_str, i),
@@ -219,7 +223,7 @@ pub fn scan(path: &Path, bytes: &[u8]) -> Vec<Finding> {
                             },
                             message: "Office document references external link/template"
                                 .to_string(),
-                            snippet: Some(e.name().to_string()),
+                            snippet: Some(name.to_string()),
                             tags: vec!["office".to_string()],
                         });
                     }

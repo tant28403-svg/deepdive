@@ -38,7 +38,7 @@ base64 = "0.22"
 hex = "0.4"
 
 # Archives
-zip = "2"
+zip = "9"
 tar = "0.4"
 flate2 = "1"
 
@@ -56,7 +56,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking", "http2", "charset"] }
 
 # Git (pure Rust) - using system git CLI for now; gix feature available for pure-Rust backend
-gix = { version = "0.66", default-features = false, features = ["basic", "blocking-http-transport-reqwest-rust-tls"], optional = true }
+gix = { version = "0.90", default-features = false, features = ["basic", "blocking-http-transport-reqwest-rust-tls"], optional = true }
 
 # Parallelism
 rayon = "1"
