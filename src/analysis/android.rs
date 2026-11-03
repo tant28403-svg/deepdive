@@ -82,7 +82,10 @@ pub fn scan_apk(path: &Path, bytes: &[u8]) -> Vec<Finding> {
         let Ok(mut entry) = archive.by_index(index) else {
             continue;
         };
-        let name = entry.name().to_string();
+        let Ok(name) = entry.name() else {
+            continue;
+        };
+        let name = name.to_string();
         if !(name.ends_with(".dex") || name == "classes.dex") {
             continue;
         }

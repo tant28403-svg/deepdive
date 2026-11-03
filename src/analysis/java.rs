@@ -77,7 +77,10 @@ pub fn scan_archive(path: &Path, bytes: &[u8]) -> Vec<Finding> {
         let Ok(mut entry) = archive.by_index(index) else {
             continue;
         };
-        if !entry.name().ends_with(".class") {
+        let Ok(name) = entry.name() else {
+            continue;
+        };
+        if !name.ends_with(".class") {
             continue;
         }
         let mut buffer = Vec::new();
