@@ -725,6 +725,30 @@ ls -la target/release/deepdive
 export PATH="$PATH:/path/to/deepdive/target/release"
 ```
 
+### Running old binary after rebuild (verdict doesn't change)
+
+If you rebuilt `deepdive` but still see old behavior (e.g., `BLOCK` verdict when it should be `UNSAFE`):
+
+```bash
+# 1. Check which binary is actually running
+which deepdive
+# If it points to /usr/local/bin/deepdive (old installed), that's the problem
+
+# 2. Run the freshly built binary directly
+cd deepdive
+./target/release/deepdive --version
+./target/release/deepdive fetch https://github.com/tant28403-svg/adobo --deep
+
+# 3. Reinstall the new binary
+sudo cp target/release/deepdive /usr/local/bin/deepdive
+
+# Or add build dir to PATH permanently
+export PATH="$HOME/deepdive/target/release:$PATH"
+# Add to ~/.bashrc or ~/.zshrc
+```
+
+**Why this happens:** `cargo build` puts the binary in `target/release/`, but your shell may find an older copy in `/usr/local/bin/` or `~/.cargo/bin/` first. Always run `which deepdive` to check.
+
 ### Sandbox fails on Windows
 ```bash
 # Test native backend
