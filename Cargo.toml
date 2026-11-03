@@ -18,7 +18,7 @@ clap_complete = "4"
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-serde_yaml = "0.9"
+serde_yaml = { version = "0.10", package = "serde_yaml_ng" }
 toml = "0.8"
 
 # File walking
@@ -81,7 +81,6 @@ tempfile = "3"
 [features]
 default = []
 git-backend-gix = ["dep:gix"]
-git-backend-git2 = ["dep:git2"]
 yara = ["dep:yara-x"]
 # Native Linux sandbox (namespaces + seccomp + cgroups). Off by default until it
 # has been validated on a Linux runner with unprivileged user namespaces.
@@ -93,10 +92,6 @@ android = []
 dotnet = []
 java = []
 wasm = ["dep:wasmparser"]
-
-[dependencies.git2]
-version = "0.19"
-optional = true
 
 [dependencies.wasmparser]
 version = "0"
