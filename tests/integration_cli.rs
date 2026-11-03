@@ -231,7 +231,7 @@ fn yara_rule_matches_scan_output() {
         .assert()
         .code(2)
         .stdout(predicate::str::contains("yara.deepdive_marker"))
-        .stdout(predicate::str::contains("VERDICT: UNSAFE"));
+        .stdout(predicate::str::contains("VERDICT: BLOCK"));
 }
 
 #[test]
